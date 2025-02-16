@@ -16,7 +16,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const webrtcRef = useRef<WebRTCConnection>();
   const speechRef = useRef<SpeechHandler>();
-  
+
   const [transcript, setTranscript] = useState("");
   const [translated, setTranslated] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
@@ -31,7 +31,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       },
       setConnectionState
     );
-    
+
     const speech = new SpeechHandler(
       roomId,
       language,
@@ -59,26 +59,32 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
   return (
     <div className="h-screen flex flex-col">
-      <div className="flex-1 grid grid-cols-2 gap-4 p-4 bg-background relative">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          muted
-          playsInline
-          className="w-full h-full object-cover rounded-lg"
-        />
+      <div className="flex-1 relative bg-background">
+        {/* Video remoto a pantalla completa */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          className="w-full h-full object-cover rounded-lg"
+          className="absolute inset-0 w-full h-full object-cover"
         />
+
+        {/* Video local en esquina superior derecha */}
+        <div className="absolute top-4 right-4 w-48 aspect-video">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-full h-full object-cover rounded-lg shadow-lg"
+          />
+        </div>
+
         <Subtitles 
           transcript={transcript}
           translated={translated}
         />
       </div>
-      
+
       <CallControls 
         language={language}
         onLanguageChange={onLanguageChange}
