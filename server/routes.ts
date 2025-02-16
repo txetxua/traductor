@@ -5,6 +5,12 @@ import { callStorage } from "./storage";
 import { z } from "zod";
 import { insertCallSchema, type SignalingMessage, type TranslationMessage } from "@shared/schema";
 
+const translateSchema = z.object({
+  text: z.string(),
+  from: z.enum(["es", "it"]),
+  to: z.enum(["es", "it"])
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/calls", async (req, res) => {
     const result = insertCallSchema.safeParse(req.body);
@@ -14,6 +20,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const call = await callStorage.createCall(result.data);
     res.json(call);
+  });
+
+  // Nuevo endpoint para traducciones
+  app.post("/api/translate", async (req, res) => {
+    const result = translateSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ error: "Invalid translation request" });
+    }
+
+    try {
+      // Por ahora, simularemos la traducción
+      // Aquí deberías integrar un servicio real de traducción
+      const translated = `[${result.data.to.toUpperCase()}] ${result.data.text}`;
+      res.json({ translated });
+    } catch (error) {
+      console.error("Translation error:", error);
+      res.status(500).json({ error: "Translation failed" });
+    }
   });
 
   const httpServer = createServer(app);
@@ -38,7 +62,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           rooms.get(roomId)!.add(ws);
 
-          // Log para debug
           console.log(`Client joined room: ${roomId}`);
         } 
         else if (message.type === "translation" || message.type === "offer" || 

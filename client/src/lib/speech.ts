@@ -30,7 +30,10 @@ export class SpeechHandler {
       const message = JSON.parse(event.data);
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;
-        this.onTranscript(translationMsg.text, translationMsg.translated);
+        // Solo mostramos la traducción si el mensaje viene del otro participante
+        if (translationMsg.from !== this.language) {
+          this.onTranscript(translationMsg.text, translationMsg.translated);
+        }
       }
     };
 
@@ -50,17 +53,39 @@ export class SpeechHandler {
 
     this.recognition.onresult = async (event: any) => {
       const text = event.results[event.results.length - 1][0].transcript;
+      try {
+        // Realizar la solicitud de traducción al servidor
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            from: this.language,
+            to: this.language === "es" ? "it" : "es"
+          }),
+        });
 
-      // Here we would normally call a translation API
-      // For demo, we'll just append "[Translated]"
-      const translated = `[Translated] ${text}`;
+        if (!response.ok) {
+          throw new Error("Translation failed");
+        }
 
-      this.ws.send(JSON.stringify({
-        type: "translation",
-        text,
-        from: this.language,
-        translated
-      }));
+        const { translated } = await response.json();
+
+        // Enviar tanto el texto original como la traducción a través de WebSocket
+        this.ws.send(JSON.stringify({
+          type: "translation",
+          text,
+          from: this.language,
+          translated
+        }));
+
+        // Mostrar la transcripción localmente
+        this.onTranscript(text, "");
+      } catch (error) {
+        console.error("Translation error:", error);
+      }
     };
 
     this.recognition.onerror = (event: any) => {
