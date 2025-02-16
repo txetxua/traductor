@@ -12,6 +12,7 @@ declare global {
 export class SpeechHandler {
   private recognition?: any;
   private ws: WebSocket;
+  private isStarted: boolean = false;
 
   constructor(
     private roomId: string,
@@ -23,6 +24,7 @@ export class SpeechHandler {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
+      console.log("Speech WebSocket connected");
       this.ws.send(JSON.stringify({ type: "join", roomId }));
     };
 
@@ -49,12 +51,19 @@ export class SpeechHandler {
     this.recognition = new window.webkitSpeechRecognition();
     this.recognition.continuous = true;
     this.recognition.interimResults = false;
-    this.recognition.lang = this.language === "es" ? "es-ES" : "it-IT";
+
+    // Configurar el idioma correcto según el navegador
+    const langMap = {
+      es: "es-ES",
+      it: "it-IT"
+    };
+    this.recognition.lang = langMap[this.language];
 
     this.recognition.onresult = async (event: any) => {
       const text = event.results[event.results.length - 1][0].transcript;
+      console.log("Speech recognized:", text);
+
       try {
-        // Realizar la solicitud de traducción al servidor
         const response = await fetch("/api/translate", {
           method: "POST",
           headers: {
@@ -72,8 +81,8 @@ export class SpeechHandler {
         }
 
         const { translated } = await response.json();
+        console.log("Translation received:", translated);
 
-        // Enviar tanto el texto original como la traducción a través de WebSocket
         this.ws.send(JSON.stringify({
           type: "translation",
           text,
@@ -90,15 +99,38 @@ export class SpeechHandler {
 
     this.recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
+      // Reiniciar el reconocimiento si hay un error
+      if (this.isStarted) {
+        console.log("Restarting speech recognition after error");
+        this.stop();
+        this.start();
+      }
+    };
+
+    this.recognition.onend = () => {
+      console.log("Speech recognition ended");
+      // Reiniciar si todavía está activo
+      if (this.isStarted) {
+        console.log("Restarting speech recognition");
+        this.recognition.start();
+      }
     };
   }
 
   start() {
-    this.recognition?.start();
+    if (this.recognition) {
+      console.log("Starting speech recognition");
+      this.isStarted = true;
+      this.recognition.start();
+    }
   }
 
   stop() {
-    this.recognition?.stop();
+    if (this.recognition) {
+      console.log("Stopping speech recognition");
+      this.isStarted = false;
+      this.recognition.stop();
+    }
     this.ws.close();
   }
 }

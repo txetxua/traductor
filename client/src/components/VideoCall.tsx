@@ -7,6 +7,7 @@ import CallControls from "./CallControls";
 import Subtitles from "./Subtitles";
 import SubtitlesConfig from "./SubtitlesConfig";
 import { type SubtitlesConfig as SubtitlesConfigType } from "./SubtitlesConfig";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   roomId: string;
@@ -26,6 +27,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const webrtcRef = useRef<WebRTCConnection>();
   const speechRef = useRef<SpeechHandler>();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const [transcript, setTranscript] = useState("");
   const [translated, setTranslated] = useState("");
@@ -33,14 +35,25 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
 
   useEffect(() => {
+    const handleError = (error: Error) => {
+      console.error("Error in call:", error);
+      toast({
+        variant: "destructive",
+        title: "Error en la llamada",
+        description: error.message,
+      });
+    };
+
     const webrtc = new WebRTCConnection(
       roomId,
       (stream) => {
+        console.log("Setting remote stream");
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = stream;
         }
       },
-      setConnectionState
+      setConnectionState,
+      handleError
     );
 
     const speech = new SpeechHandler(
@@ -52,12 +65,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       }
     );
 
+    console.log("Starting WebRTC connection...");
     webrtc.start(true).then(stream => {
+      console.log("Got local stream, setting to video element");
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
       speech.start();
-    });
+    }).catch(handleError);
 
     webrtcRef.current = webrtc;
     speechRef.current = speech;
@@ -66,7 +81,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       webrtc.close();
       speech.stop();
     };
-  }, [roomId, language]);
+  }, [roomId, language, toast]);
 
   const handleHangup = () => {
     webrtcRef.current?.close();
