@@ -39,6 +39,37 @@ export default function CallControls({
     });
   };
 
+  const getConnectionStatusText = () => {
+    switch (connectionState) {
+      case 'new':
+        return 'Iniciando...';
+      case 'connecting':
+        return 'Conectando...';
+      case 'connected':
+        return 'Conectado';
+      case 'disconnected':
+        return 'Desconectado';
+      case 'failed':
+        return 'Error de conexión';
+      case 'closed':
+        return 'Llamada finalizada';
+      default:
+        return 'Conectando...';
+    }
+  };
+
+  const getConnectionStatusClass = () => {
+    switch (connectionState) {
+      case 'connected':
+        return 'text-green-500';
+      case 'failed':
+      case 'disconnected':
+        return 'text-red-500';
+      default:
+        return 'text-muted-foreground';
+    }
+  };
+
   return (
     <div className="h-20 bg-muted border-t flex items-center justify-center gap-4 px-4">
       <Button
@@ -96,8 +127,8 @@ export default function CallControls({
         <PhoneOff className="h-4 w-4" />
       </Button>
 
-      <div className="text-sm text-muted-foreground">
-        Estado: {connectionState || "Conectando..."}
+      <div className={`text-sm font-medium ${getConnectionStatusClass()}`}>
+        {getConnectionStatusText()}
       </div>
     </div>
   );

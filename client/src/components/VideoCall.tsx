@@ -3,9 +3,9 @@ import { useLocation } from "wouter";
 import { WebRTCConnection } from "@/lib/webrtc";
 import { SpeechHandler } from "@/lib/speech";
 import { type Language } from "@shared/schema";
-import CallControls from "./CallControls";
-import Subtitles from "./Subtitles";
-import SubtitlesConfig from "./SubtitlesConfig";
+import CallControls from "@/components/CallControls";
+import Subtitles from "@/components/Subtitles";
+import SubtitlesConfig from "@/components/SubtitlesConfig";
 import { type SubtitlesConfig as SubtitlesConfigType } from "./SubtitlesConfig";
 import { useToast } from "@/hooks/use-toast";
 

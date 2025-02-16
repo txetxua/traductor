@@ -1,9 +1,9 @@
 import { type SignalingMessage } from "@shared/schema";
 
 export class WebRTCConnection {
-  private pc: RTCPeerConnection;
+  private pc!: RTCPeerConnection;
   private stream?: MediaStream;
-  private ws: WebSocket;
+  private ws!: WebSocket;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
 
@@ -77,6 +77,7 @@ export class WebRTCConnection {
 
     this.pc = new RTCPeerConnection(configuration);
 
+    // Manejo de candidatos ICE
     this.pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
         console.log("New ICE candidate:", candidate);
@@ -87,29 +88,39 @@ export class WebRTCConnection {
       }
     };
 
+    // Manejo del estado de conexión ICE
+    this.pc.oniceconnectionstatechange = () => {
+      console.log("ICE connection state changed to:", this.pc.iceConnectionState);
+      if (this.pc.iceConnectionState === 'connected') {
+        console.log("ICE Connection established successfully");
+        this.onConnectionStateChange('connected');
+      } else if (this.pc.iceConnectionState === 'failed') {
+        console.error("ICE Connection failed");
+        this.onError(new Error("La conexión de video ha fallado"));
+      }
+    };
+
+    // Manejo de tracks remotos
     this.pc.ontrack = (event) => {
       console.log("Received remote track:", event.track.kind);
       const [remoteStream] = event.streams;
       if (remoteStream) {
+        console.log("Setting remote stream to video element");
         this.onRemoteStream(remoteStream);
       }
     };
 
+    // Manejo del estado general de la conexión
     this.pc.onconnectionstatechange = () => {
-      console.log("Connection state changed:", this.pc.connectionState);
+      console.log("Connection state changed to:", this.pc.connectionState);
       this.onConnectionStateChange(this.pc.connectionState);
 
-      if (this.pc.connectionState === 'failed') {
+      if (this.pc.connectionState === 'connected') {
+        console.log("Peer connection established successfully");
+      } else if (this.pc.connectionState === 'failed') {
+        console.error("Peer connection failed");
         this.onError(new Error("La conexión con el otro participante ha fallado"));
       }
-    };
-
-    this.pc.onicegatheringstatechange = () => {
-      console.log("ICE gathering state:", this.pc.iceGatheringState);
-    };
-
-    this.pc.onsignalingstatechange = () => {
-      console.log("Signaling state:", this.pc.signalingState);
     };
   }
 
@@ -150,7 +161,7 @@ export class WebRTCConnection {
 
   async start(videoEnabled: boolean) {
     try {
-      console.log("Starting WebRTC connection...");
+      console.log("Starting WebRTC connection with video:", videoEnabled);
 
       const constraints = {
         video: videoEnabled ? {
@@ -178,7 +189,7 @@ export class WebRTCConnection {
         }
       });
 
-      console.log("Creating and setting local description");
+      console.log("Creating and sending offer");
       const offer = await this.pc.createOffer();
       await this.pc.setLocalDescription(offer);
 
