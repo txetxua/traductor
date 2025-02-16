@@ -33,10 +33,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [translated, setTranslated] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
+  const [cameraError, setCameraError] = useState<string>();
 
   useEffect(() => {
     const handleError = (error: Error) => {
       console.error("Error in call:", error);
+      if (error.name === 'NotAllowedError') {
+        setCameraError('No se ha dado permiso para acceder a la cámara');
+      } else if (error.name === 'NotFoundError') {
+        setCameraError('No se encontró ninguna cámara');
+      } else {
+        setCameraError(error.message);
+      }
+
       toast({
         variant: "destructive",
         title: "Error en la llamada",
@@ -44,42 +53,60 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       });
     };
 
-    const webrtc = new WebRTCConnection(
-      roomId,
-      (stream) => {
-        console.log("Setting remote stream");
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
+    async function initializeCall() {
+      try {
+        console.log("Iniciando llamada para room:", roomId);
+
+        // Verificar permisos de la cámara primero
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const hasCamera = devices.some(device => device.kind === 'videoinput');
+        if (!hasCamera) {
+          throw new Error('No se detectó ninguna cámara');
         }
-      },
-      setConnectionState,
-      handleError
-    );
 
-    const speech = new SpeechHandler(
-      roomId,
-      language,
-      (text, translated) => {
-        setTranscript(text);
-        setTranslated(translated);
+        const webrtc = new WebRTCConnection(
+          roomId,
+          (stream) => {
+            console.log("Recibido stream remoto");
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = stream;
+            }
+          },
+          setConnectionState,
+          handleError
+        );
+
+        const speech = new SpeechHandler(
+          roomId,
+          language,
+          (text, translated) => {
+            setTranscript(text);
+            setTranslated(translated);
+          }
+        );
+
+        console.log("Iniciando conexión WebRTC...");
+        const localStream = await webrtc.start(true);
+        console.log("Stream local obtenido, configurando video");
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
+        }
+
+        speech.start();
+
+        webrtcRef.current = webrtc;
+        speechRef.current = speech;
+      } catch (error) {
+        handleError(error as Error);
       }
-    );
+    }
 
-    console.log("Starting WebRTC connection...");
-    webrtc.start(true).then(stream => {
-      console.log("Got local stream, setting to video element");
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-      speech.start();
-    }).catch(handleError);
-
-    webrtcRef.current = webrtc;
-    speechRef.current = speech;
+    initializeCall();
 
     return () => {
-      webrtc.close();
-      speech.stop();
+      webrtcRef.current?.close();
+      speechRef.current?.stop();
     };
   }, [roomId, language, toast]);
 
@@ -90,15 +117,24 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   };
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex-1 relative bg-background">
+    <div className="h-screen flex flex-col bg-background">
+      <div className="flex-1 relative">
         {/* Video remoto a pantalla completa */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover bg-black/10"
         />
+
+        {/* Mensaje de error de cámara */}
+        {cameraError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+            <div className="bg-destructive p-4 rounded-lg">
+              {cameraError}
+            </div>
+          </div>
+        )}
 
         {/* Video local en esquina superior derecha */}
         <div className="absolute top-4 right-4 w-48 aspect-video">
@@ -107,7 +143,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             autoPlay
             muted
             playsInline
-            className="w-full h-full object-cover rounded-lg shadow-lg"
+            className="w-full h-full object-cover rounded-lg shadow-lg bg-black/10"
           />
         </div>
 

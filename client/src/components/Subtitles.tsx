@@ -13,14 +13,16 @@ export default function Subtitles({ transcript, translated, config }: Props) {
     fontSize: `${config.fontSize}px`,
     fontFamily: config.fontFamily,
     color: config.color,
-    textShadow: "2px 2px 4px rgba(0,0,0,0.5)"
+    textShadow: "2px 2px 4px rgba(0,0,0,0.5)",
+    maxWidth: "80%", 
+    margin: "0 auto"  
   };
 
   return (
-    <div className="absolute bottom-28 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none">
+    <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-1 pointer-events-none">
       {transcript && (
         <div 
-          className="px-4 py-2 rounded-lg font-semibold text-center"
+          className="px-3 py-1 rounded-lg font-semibold text-center"
           style={subtitleStyle}
         >
           {transcript}
@@ -28,7 +30,7 @@ export default function Subtitles({ transcript, translated, config }: Props) {
       )}
       {translated && (
         <div 
-          className="px-4 py-2 rounded-lg font-semibold text-center"
+          className="px-3 py-1 rounded-lg font-semibold text-center"
           style={subtitleStyle}
         >
           {translated}
