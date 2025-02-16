@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { WebRTCConnection } from "@/lib/webrtc";
 import { SpeechHandler } from "@/lib/speech";
 import { type Language } from "@shared/schema";
@@ -16,6 +17,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const webrtcRef = useRef<WebRTCConnection>();
   const speechRef = useRef<SpeechHandler>();
+  const [, setLocation] = useLocation();
 
   const [transcript, setTranscript] = useState("");
   const [translated, setTranslated] = useState("");
@@ -57,6 +59,12 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     };
   }, [roomId, language]);
 
+  const handleHangup = () => {
+    webrtcRef.current?.close();
+    speechRef.current?.stop();
+    setLocation("/");
+  };
+
   return (
     <div className="h-screen flex flex-col">
       <div className="flex-1 relative bg-background">
@@ -89,6 +97,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         language={language}
         onLanguageChange={onLanguageChange}
         connectionState={connectionState}
+        roomId={roomId}
+        onHangup={handleHangup}
       />
     </div>
   );

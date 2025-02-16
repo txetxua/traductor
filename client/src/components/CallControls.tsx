@@ -1,22 +1,38 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type Language } from "@shared/schema";
-import { Video, VideoOff, Mic, MicOff } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, Link, PhoneOff } from "lucide-react";
 import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   language: Language;
   onLanguageChange: (lang: Language) => void;
   connectionState?: RTCPeerConnectionState;
+  roomId: string;
+  onHangup: () => void;
 }
 
 export default function CallControls({ 
   language,
   onLanguageChange,
-  connectionState 
+  connectionState,
+  roomId,
+  onHangup
 }: Props) {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const { toast } = useToast();
+
+  const copyRoomLink = () => {
+    const url = `${window.location.origin}/call/${roomId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({
+        description: "Enlace copiado al portapapeles",
+        duration: 2000
+      });
+    });
+  };
 
   return (
     <div className="h-20 bg-muted border-t flex items-center justify-center gap-4 px-4">
@@ -56,6 +72,24 @@ export default function CallControls({
           <SelectItem value="it">Italiano</SelectItem>
         </SelectContent>
       </Select>
+
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={copyRoomLink}
+        title="Copiar enlace de la llamada"
+      >
+        <Link className="h-4 w-4" />
+      </Button>
+
+      <Button
+        variant="destructive"
+        size="icon"
+        onClick={onHangup}
+        title="Finalizar llamada"
+      >
+        <PhoneOff className="h-4 w-4" />
+      </Button>
 
       <div className="text-sm text-muted-foreground">
         Estado: {connectionState || "Conectando..."}
