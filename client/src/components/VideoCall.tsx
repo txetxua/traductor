@@ -5,12 +5,20 @@ import { SpeechHandler } from "@/lib/speech";
 import { type Language } from "@shared/schema";
 import CallControls from "./CallControls";
 import Subtitles from "./Subtitles";
+import SubtitlesConfig from "./SubtitlesConfig";
+import { type SubtitlesConfig as SubtitlesConfigType } from "./SubtitlesConfig";
 
 interface Props {
   roomId: string;
   language: Language;
   onLanguageChange: (lang: Language) => void;
 }
+
+const DEFAULT_SUBTITLES_CONFIG: SubtitlesConfigType = {
+  fontSize: 24,
+  fontFamily: "sans",
+  color: "white",
+};
 
 export default function VideoCall({ roomId, language, onLanguageChange }: Props) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -22,6 +30,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [transcript, setTranscript] = useState("");
   const [translated, setTranslated] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
+  const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
 
   useEffect(() => {
     const webrtc = new WebRTCConnection(
@@ -87,9 +96,12 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           />
         </div>
 
+        <SubtitlesConfig onChange={setSubtitlesConfig} />
+
         <Subtitles 
           transcript={transcript}
           translated={translated}
+          config={subtitlesConfig}
         />
       </div>
 
