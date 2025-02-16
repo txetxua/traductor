@@ -34,6 +34,7 @@ export class SpeechHandler {
         const translationMsg = message as TranslationMessage;
         // Solo mostramos la traducción si el mensaje viene del otro participante
         if (translationMsg.from !== this.language) {
+          console.log("Recibida traducción del otro participante:", translationMsg);
           this.onTranscript(translationMsg.text, translationMsg.translated);
         }
       }
@@ -83,15 +84,15 @@ export class SpeechHandler {
         const { translated } = await response.json();
         console.log("Translation received:", translated);
 
-        this.ws.send(JSON.stringify({
+        // Enviar la traducción a través de WebSocket
+        const message = {
           type: "translation",
           text,
           from: this.language,
           translated
-        }));
-
-        // Mostrar la transcripción localmente
-        this.onTranscript(text, "");
+        };
+        console.log("Enviando traducción:", message);
+        this.ws.send(JSON.stringify(message));
       } catch (error) {
         console.error("Translation error:", error);
       }
@@ -99,7 +100,6 @@ export class SpeechHandler {
 
     this.recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
-      // Reiniciar el reconocimiento si hay un error
       if (this.isStarted) {
         console.log("Restarting speech recognition after error");
         this.stop();
@@ -118,7 +118,7 @@ export class SpeechHandler {
   }
 
   start() {
-    if (this.recognition) {
+    if (this.recognition && !this.isStarted) {
       console.log("Starting speech recognition");
       this.isStarted = true;
       this.recognition.start();

@@ -22,7 +22,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(call);
   });
 
-  // Nuevo endpoint para traducciones
   app.post("/api/translate", async (req, res) => {
     const result = translateSchema.safeParse(req.body);
     if (!result.success) {
@@ -30,9 +29,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Por ahora, simularemos la traducción
-      // Aquí deberías integrar un servicio real de traducción
-      const translated = `[${result.data.to.toUpperCase()}] ${result.data.text}`;
+      // Implementación temporal de traducción
+      const { text, from, to } = result.data;
+      let translated = text;
+
+      // Simular traducción básica para pruebas
+      if (from === "es" && to === "it") {
+        translated = `[IT] ${text}`;
+      } else if (from === "it" && to === "es") {
+        translated = `[ES] ${text}`;
+      }
+
+      console.log(`Traducción: ${text} (${from}) -> ${translated} (${to})`);
       res.json({ translated });
     } catch (error) {
       console.error("Translation error:", error);
@@ -63,14 +71,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           rooms.get(roomId)!.add(ws);
 
-          console.log(`Client joined room: ${roomId}. Total clients in room: ${rooms.get(roomId)!.size}`);
+          console.log(`Cliente conectado a sala: ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
         } 
         else if (message.type === "translation" || message.type === "offer" || 
                  message.type === "answer" || message.type === "ice-candidate") {
-          // Broadcast to all clients in room except sender
+          // Broadcast a todos los clientes en la sala excepto el remitente
           if (currentRoom && rooms.has(currentRoom)) {
             const clientsInRoom = rooms.get(currentRoom)!;
-            console.log(`Broadcasting ${message.type} to ${clientsInRoom.size - 1} other clients in room ${currentRoom}`);
+            console.log(`Enviando mensaje ${message.type} a ${clientsInRoom.size - 1} otros clientes en sala ${currentRoom}`);
 
             clientsInRoom.forEach((client) => {
               if (client !== ws && client.readyState === WebSocket.OPEN) {
@@ -78,11 +86,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             });
           } else {
-            console.log(`Cannot broadcast ${message.type}: no room found for client`);
+            console.log(`No se puede enviar ${message.type}: cliente no está en ninguna sala`);
           }
         }
       } catch (err) {
-        console.error("WebSocket message error:", err);
+        console.error("Error en mensaje WebSocket:", err);
       }
     });
 
@@ -91,9 +99,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rooms.get(currentRoom)!.delete(ws);
         if (rooms.get(currentRoom)!.size === 0) {
           rooms.delete(currentRoom);
-          console.log(`Room ${currentRoom} deleted - no more clients`);
+          console.log(`Sala ${currentRoom} eliminada - no quedan clientes`);
         }
-        console.log(`Client left room: ${currentRoom}. Remaining clients: ${rooms.get(currentRoom)?.size || 0}`);
+        console.log(`Cliente desconectado de sala: ${currentRoom}. Clientes restantes: ${rooms.get(currentRoom)?.size || 0}`);
       }
     });
   });
