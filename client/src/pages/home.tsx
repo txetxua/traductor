@@ -22,10 +22,10 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
+    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-background to-primary/5">
       <Card className="w-[90%] max-w-md mx-4">
         <CardHeader>
-          <CardTitle className="text-2xl text-center bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+          <CardTitle className="text-2xl text-center text-white">
             Videollamadas con Traducción
           </CardTitle>
         </CardHeader>

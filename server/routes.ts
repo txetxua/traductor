@@ -52,6 +52,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
+        console.log("WebSocket message received:", message.type, "for room:", message.roomId || currentRoom);
 
         if (message.type === "join") {
           const roomId = message.roomId;
@@ -62,17 +63,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           rooms.get(roomId)!.add(ws);
 
-          console.log(`Client joined room: ${roomId}`);
+          console.log(`Client joined room: ${roomId}. Total clients in room: ${rooms.get(roomId)!.size}`);
         } 
         else if (message.type === "translation" || message.type === "offer" || 
                  message.type === "answer" || message.type === "ice-candidate") {
           // Broadcast to all clients in room except sender
           if (currentRoom && rooms.has(currentRoom)) {
-            rooms.get(currentRoom)!.forEach((client) => {
+            const clientsInRoom = rooms.get(currentRoom)!;
+            console.log(`Broadcasting ${message.type} to ${clientsInRoom.size - 1} other clients in room ${currentRoom}`);
+
+            clientsInRoom.forEach((client) => {
               if (client !== ws && client.readyState === WebSocket.OPEN) {
                 client.send(data.toString());
               }
             });
+          } else {
+            console.log(`Cannot broadcast ${message.type}: no room found for client`);
           }
         }
       } catch (err) {
@@ -85,8 +91,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rooms.get(currentRoom)!.delete(ws);
         if (rooms.get(currentRoom)!.size === 0) {
           rooms.delete(currentRoom);
+          console.log(`Room ${currentRoom} deleted - no more clients`);
         }
-        console.log(`Client left room: ${currentRoom}`);
+        console.log(`Client left room: ${currentRoom}. Remaining clients: ${rooms.get(currentRoom)?.size || 0}`);
       }
     });
   });

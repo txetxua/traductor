@@ -34,6 +34,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
   const [cameraError, setCameraError] = useState<string>();
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [videoEnabled, setVideoEnabled] = useState(true);
 
   useEffect(() => {
     const handleError = (error: Error) => {
@@ -80,18 +82,34 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           roomId,
           language,
           (text, translated) => {
-            setTranscript(text);
-            setTranslated(translated);
+            // Solo mostrar subtítulos del otro interlocutor
+            if (text && !translated) {
+              // Este es un mensaje local, no lo mostramos
+              setTranscript("");
+              setTranslated("");
+            } else {
+              // Este es un mensaje remoto traducido
+              setTranscript(text);
+              setTranslated(translated);
+            }
           }
         );
 
         console.log("Iniciando conexión WebRTC...");
-        const localStream = await webrtc.start(true);
+        const localStream = await webrtc.start(videoEnabled);
         console.log("Stream local obtenido, configurando video");
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = localStream;
         }
+
+        // Configurar estado inicial de audio/video
+        localStream.getAudioTracks().forEach(track => {
+          track.enabled = audioEnabled;
+        });
+        localStream.getVideoTracks().forEach(track => {
+          track.enabled = videoEnabled;
+        });
 
         speech.start();
 
@@ -108,12 +126,32 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       webrtcRef.current?.close();
       speechRef.current?.stop();
     };
-  }, [roomId, language, toast]);
+  }, [roomId, language, toast, videoEnabled, audioEnabled]);
 
   const handleHangup = () => {
     webrtcRef.current?.close();
     speechRef.current?.stop();
     setLocation("/");
+  };
+
+  const handleAudioToggle = (enabled: boolean) => {
+    setAudioEnabled(enabled);
+    const stream = localVideoRef.current?.srcObject as MediaStream;
+    if (stream) {
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = enabled;
+      });
+    }
+  };
+
+  const handleVideoToggle = (enabled: boolean) => {
+    setVideoEnabled(enabled);
+    const stream = localVideoRef.current?.srcObject as MediaStream;
+    if (stream) {
+      stream.getVideoTracks().forEach(track => {
+        track.enabled = enabled;
+      });
+    }
   };
 
   return (
@@ -162,6 +200,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         connectionState={connectionState}
         roomId={roomId}
         onHangup={handleHangup}
+        audioEnabled={audioEnabled}
+        onAudioToggle={handleAudioToggle}
+        videoEnabled={videoEnabled}
+        onVideoToggle={handleVideoToggle}
       />
     </div>
   );

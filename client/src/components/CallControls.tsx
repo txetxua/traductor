@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type Language } from "@shared/schema";
 import { Video, VideoOff, Mic, MicOff, Link, PhoneOff } from "lucide-react";
-import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
@@ -11,6 +10,10 @@ interface Props {
   connectionState?: RTCPeerConnectionState;
   roomId: string;
   onHangup: () => void;
+  audioEnabled: boolean;
+  onAudioToggle: (enabled: boolean) => void;
+  videoEnabled: boolean;
+  onVideoToggle: (enabled: boolean) => void;
 }
 
 export default function CallControls({ 
@@ -18,10 +21,12 @@ export default function CallControls({
   onLanguageChange,
   connectionState,
   roomId,
-  onHangup
+  onHangup,
+  audioEnabled,
+  onAudioToggle,
+  videoEnabled,
+  onVideoToggle
 }: Props) {
-  const [videoEnabled, setVideoEnabled] = useState(true);
-  const [audioEnabled, setAudioEnabled] = useState(true);
   const { toast } = useToast();
 
   const copyRoomLink = () => {
@@ -39,7 +44,7 @@ export default function CallControls({
       <Button
         variant="outline"
         size="icon"
-        onClick={() => setVideoEnabled(!videoEnabled)}
+        onClick={() => onVideoToggle(!videoEnabled)}
       >
         {videoEnabled ? (
           <Video className="h-4 w-4" />
@@ -51,7 +56,7 @@ export default function CallControls({
       <Button
         variant="outline"
         size="icon"
-        onClick={() => setAudioEnabled(!audioEnabled)}
+        onClick={() => onAudioToggle(!audioEnabled)}
       >
         {audioEnabled ? (
           <Mic className="h-4 w-4" />

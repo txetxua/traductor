@@ -13,8 +13,8 @@ export class WebRTCConnection {
     private onConnectionStateChange: (state: RTCPeerConnectionState) => void,
     private onError: (error: Error) => void
   ) {
-    this.initializeWebSocket();
     this.initializePeerConnection();
+    this.initializeWebSocket();
   }
 
   private initializeWebSocket() {
@@ -51,19 +51,25 @@ export class WebRTCConnection {
 
   private initializePeerConnection() {
     console.log("Initializing RTCPeerConnection");
-    this.pc = new RTCPeerConnection({
+
+    const configuration = {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
         { urls: "stun:stun2.l.google.com:19302" },
         { urls: "stun:stun3.l.google.com:19302" },
         { urls: "stun:stun4.l.google.com:19302" }
-      ]
-    });
+      ],
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+    };
+
+    this.pc = new RTCPeerConnection(configuration);
 
     this.pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
-        console.log("New ICE candidate:", candidate.type);
+        console.log("New ICE candidate:", candidate);
         this.sendSignaling({
           type: "ice-candidate",
           payload: candidate
@@ -94,6 +100,42 @@ export class WebRTCConnection {
     };
   }
 
+  private async requestMediaPermissions(videoEnabled: boolean): Promise<MediaStream> {
+    try {
+      console.log("Requesting media permissions...");
+      const constraints = {
+        video: videoEnabled ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        } : false,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("Media permissions granted:", 
+        `video: ${stream.getVideoTracks().length > 0}`, 
+        `audio: ${stream.getAudioTracks().length > 0}`
+      );
+      return stream;
+    } catch (error: any) {
+      console.error("Failed to get media permissions:", error);
+      if (error.name === "NotAllowedError") {
+        throw new Error("No se han concedido permisos para acceder a la cámara o micrófono");
+      } else if (error.name === "NotFoundError") {
+        throw new Error("No se ha encontrado ninguna cámara o micrófono");
+      } else if (error.name === "NotReadableError") {
+        throw new Error("La cámara o el micrófono están siendo utilizados por otra aplicación");
+      } else {
+        throw error;
+      }
+    }
+  }
+
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
@@ -118,7 +160,9 @@ export class WebRTCConnection {
 
         case "ice-candidate":
           console.log("Processing ICE candidate");
-          await this.pc.addIceCandidate(message.payload);
+          if (this.pc.remoteDescription) {
+            await this.pc.addIceCandidate(message.payload);
+          }
           break;
       }
     } catch (err) {
@@ -129,21 +173,17 @@ export class WebRTCConnection {
 
   async start(videoEnabled: boolean) {
     try {
-      console.log("Requesting media access...");
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: videoEnabled,
-        audio: true
-      });
+      console.log("Starting WebRTC connection...");
+      this.stream = await this.requestMediaPermissions(videoEnabled);
 
-      console.log("Media access granted");
+      console.log("Adding tracks to peer connection");
       this.stream.getTracks().forEach(track => {
         console.log("Adding track to peer connection:", track.kind);
         this.pc.addTrack(track, this.stream!);
       });
 
-      console.log("Creating offer");
+      console.log("Creating and setting local description");
       const offer = await this.pc.createOffer();
-      console.log("Setting local description");
       await this.pc.setLocalDescription(offer);
 
       this.sendSignaling({
