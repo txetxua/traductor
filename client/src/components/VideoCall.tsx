@@ -62,19 +62,37 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         // Verificar permisos de la cámara primero
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
-        if (!hasCamera) {
+        const hasMicrophone = devices.some(device => device.kind === 'audioinput');
+
+        console.log("Dispositivos disponibles:", {
+          camera: hasCamera,
+          microphone: hasMicrophone
+        });
+
+        if (!hasCamera && videoEnabled) {
           throw new Error('No se detectó ninguna cámara');
+        }
+
+        if (!hasMicrophone) {
+          throw new Error('No se detectó ningún micrófono');
         }
 
         const webrtc = new WebRTCConnection(
           roomId,
           (stream) => {
-            console.log("Recibido stream remoto");
+            console.log("Stream remoto recibido:", {
+              hasVideo: stream.getVideoTracks().length > 0,
+              hasAudio: stream.getAudioTracks().length > 0
+            });
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = stream;
+              remoteVideoRef.current.play().catch(console.error);
             }
           },
-          setConnectionState,
+          (state) => {
+            console.log("Estado de conexión cambiado a:", state);
+            setConnectionState(state);
+          },
           handleError
         );
 
@@ -82,13 +100,11 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           roomId,
           language,
           (text, translated) => {
-            // Solo mostrar subtítulos del otro participante
             if (translated) {
-              console.log("Mostrando subtítulos de traducción:", { text, translated });
+              console.log("Recibida traducción:", { text, translated });
               setTranscript(text);
               setTranslated(translated);
             } else {
-              // Mensaje local, no mostramos nada
               setTranscript("");
               setTranslated("");
             }
@@ -97,10 +113,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         console.log("Iniciando conexión WebRTC...");
         const localStream = await webrtc.start(videoEnabled);
-        console.log("Stream local obtenido, configurando video");
+        console.log("Stream local obtenido:", {
+          hasVideo: localStream.getVideoTracks().length > 0,
+          hasAudio: localStream.getAudioTracks().length > 0
+        });
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = localStream;
+          localVideoRef.current.play().catch(console.error);
         }
 
         // Configurar estado inicial de audio/video
