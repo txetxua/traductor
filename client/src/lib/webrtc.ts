@@ -52,17 +52,27 @@ export class WebRTCConnection {
   private initializePeerConnection() {
     console.log("Initializing RTCPeerConnection");
 
-    const configuration = {
+    const configuration: RTCConfiguration = {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
-        { urls: "stun:stun4.l.google.com:19302" }
+        {
+          urls: "turn:relay.metered.ca:80",
+          username: "83c02581d3f4af5d3446bc3c",
+          credential: "L8YGPMtaJJ+tNcYK",
+        },
+        {
+          urls: "turn:relay.metered.ca:443",
+          username: "83c02581d3f4af5d3446bc3c",
+          credential: "L8YGPMtaJJ+tNcYK",
+        },
+        {
+          urls: "turn:relay.metered.ca:443?transport=tcp",
+          username: "83c02581d3f4af5d3446bc3c",
+          credential: "L8YGPMtaJJ+tNcYK",
+        }
       ],
-      iceTransportPolicy: 'all',
-      bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require',
+      iceTransportPolicy: "all"
     };
 
     this.pc = new RTCPeerConnection(configuration);
@@ -79,7 +89,10 @@ export class WebRTCConnection {
 
     this.pc.ontrack = (event) => {
       console.log("Received remote track:", event.track.kind);
-      this.onRemoteStream(event.streams[0]);
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        this.onRemoteStream(remoteStream);
+      }
     };
 
     this.pc.onconnectionstatechange = () => {
@@ -100,42 +113,6 @@ export class WebRTCConnection {
     };
   }
 
-  private async requestMediaPermissions(videoEnabled: boolean): Promise<MediaStream> {
-    try {
-      console.log("Requesting media permissions...");
-      const constraints = {
-        video: videoEnabled ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: "user"
-        } : false,
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Media permissions granted:", 
-        `video: ${stream.getVideoTracks().length > 0}`, 
-        `audio: ${stream.getAudioTracks().length > 0}`
-      );
-      return stream;
-    } catch (error: any) {
-      console.error("Failed to get media permissions:", error);
-      if (error.name === "NotAllowedError") {
-        throw new Error("No se han concedido permisos para acceder a la cámara o micrófono");
-      } else if (error.name === "NotFoundError") {
-        throw new Error("No se ha encontrado ninguna cámara o micrófono");
-      } else if (error.name === "NotReadableError") {
-        throw new Error("La cámara o el micrófono están siendo utilizados por otra aplicación");
-      } else {
-        throw error;
-      }
-    }
-  }
-
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
@@ -144,7 +121,7 @@ export class WebRTCConnection {
       switch (message.type) {
         case "offer":
           console.log("Processing offer");
-          await this.pc.setRemoteDescription(message.payload);
+          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
           this.sendSignaling({
@@ -155,13 +132,13 @@ export class WebRTCConnection {
 
         case "answer":
           console.log("Processing answer");
-          await this.pc.setRemoteDescription(message.payload);
+          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
           console.log("Processing ICE candidate");
           if (this.pc.remoteDescription) {
-            await this.pc.addIceCandidate(message.payload);
+            await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
           }
           break;
       }
@@ -174,12 +151,31 @@ export class WebRTCConnection {
   async start(videoEnabled: boolean) {
     try {
       console.log("Starting WebRTC connection...");
-      this.stream = await this.requestMediaPermissions(videoEnabled);
 
-      console.log("Adding tracks to peer connection");
+      const constraints = {
+        video: videoEnabled ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } : false,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      };
+
+      console.log("Requesting media with constraints:", constraints);
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      console.log("Media access granted:", 
+        `video: ${this.stream.getVideoTracks().length > 0}`,
+        `audio: ${this.stream.getAudioTracks().length > 0}`
+      );
+
       this.stream.getTracks().forEach(track => {
         console.log("Adding track to peer connection:", track.kind);
-        this.pc.addTrack(track, this.stream!);
+        if (this.stream) {
+          this.pc.addTrack(track, this.stream);
+        }
       });
 
       console.log("Creating and setting local description");

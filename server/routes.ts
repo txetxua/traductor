@@ -60,7 +60,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log("WebSocket message received:", message.type, "for room:", message.roomId || currentRoom);
+        console.log("[WebSocket] Mensaje recibido:", message.type, "para sala:", message.roomId || currentRoom);
 
         if (message.type === "join") {
           const roomId = message.roomId;
@@ -71,26 +71,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           rooms.get(roomId)!.add(ws);
 
-          console.log(`Cliente conectado a sala: ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
+          console.log(`[WebSocket] Cliente conectado a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
         } 
         else if (message.type === "translation" || message.type === "offer" || 
                  message.type === "answer" || message.type === "ice-candidate") {
-          // Broadcast a todos los clientes en la sala excepto el remitente
-          if (currentRoom && rooms.has(currentRoom)) {
-            const clientsInRoom = rooms.get(currentRoom)!;
-            console.log(`Enviando mensaje ${message.type} a ${clientsInRoom.size - 1} otros clientes en sala ${currentRoom}`);
-
-            clientsInRoom.forEach((client) => {
-              if (client !== ws && client.readyState === WebSocket.OPEN) {
-                client.send(data.toString());
-              }
-            });
-          } else {
-            console.log(`No se puede enviar ${message.type}: cliente no está en ninguna sala`);
+          if (!currentRoom || !rooms.has(currentRoom)) {
+            console.log(`[WebSocket] Error: cliente no está en ninguna sala`);
+            return;
           }
+
+          const clientsInRoom = rooms.get(currentRoom)!;
+          console.log(`[WebSocket] Enviando mensaje ${message.type} a ${clientsInRoom.size - 1} otros clientes en sala ${currentRoom}`);
+
+          clientsInRoom.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(data.toString());
+            }
+          });
         }
       } catch (err) {
-        console.error("Error en mensaje WebSocket:", err);
+        console.error("[WebSocket] Error procesando mensaje:", err);
       }
     });
 
@@ -99,9 +99,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rooms.get(currentRoom)!.delete(ws);
         if (rooms.get(currentRoom)!.size === 0) {
           rooms.delete(currentRoom);
-          console.log(`Sala ${currentRoom} eliminada - no quedan clientes`);
+          console.log(`[WebSocket] Sala ${currentRoom} eliminada - no quedan clientes`);
         }
-        console.log(`Cliente desconectado de sala: ${currentRoom}. Clientes restantes: ${rooms.get(currentRoom)?.size || 0}`);
+        console.log(`[WebSocket] Cliente desconectado de sala ${currentRoom}. Clientes restantes: ${rooms.get(currentRoom)?.size || 0}`);
       }
     });
   });

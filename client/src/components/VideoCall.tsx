@@ -82,15 +82,15 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           roomId,
           language,
           (text, translated) => {
-            // Solo mostrar subtítulos del otro interlocutor
-            if (text && !translated) {
-              // Este es un mensaje local, no lo mostramos
-              setTranscript("");
-              setTranslated("");
-            } else {
-              // Este es un mensaje remoto traducido
+            // Solo mostrar subtítulos del otro participante
+            if (translated) {
+              console.log("Mostrando subtítulos de traducción:", { text, translated });
               setTranscript(text);
               setTranslated(translated);
+            } else {
+              // Mensaje local, no mostramos nada
+              setTranscript("");
+              setTranslated("");
             }
           }
         );
@@ -187,14 +187,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        <Subtitles 
+        <Subtitles
           transcript={transcript}
           translated={translated}
           config={subtitlesConfig}
         />
       </div>
 
-      <CallControls 
+      <CallControls
         language={language}
         onLanguageChange={onLanguageChange}
         connectionState={connectionState}
