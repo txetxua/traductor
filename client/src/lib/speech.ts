@@ -36,6 +36,7 @@ export class SpeechHandler {
         const message = JSON.parse(event.data);
         if (message.type === "translation") {
           const translationMsg = message as TranslationMessage;
+          // Si el mensaje es de otro participante, mostrar su texto y traducción
           if (translationMsg.from !== this.language) {
             console.log("[Speech] Traducción recibida:", translationMsg);
             this.onTranscript(translationMsg.text, translationMsg.translated);
@@ -80,10 +81,10 @@ export class SpeechHandler {
     };
 
     this.recognition.onresult = async (event: any) => {
-      try {
-        const text = event.results[event.results.length - 1][0].transcript;
-        console.log("[Speech] Texto reconocido:", text);
+      const text = event.results[event.results.length - 1][0].transcript;
+      console.log("[Speech] Texto reconocido:", text);
 
+      try {
         const response = await fetch("/api/translate", {
           method: "POST",
           headers: {
@@ -103,16 +104,18 @@ export class SpeechHandler {
         const { translated } = await response.json();
         console.log("[Speech] Traducción:", translated);
 
+        // Mostrar nuestro texto y su traducción localmente
+        this.onTranscript(text, translated);
+
+        // Enviar al otro participante
         if (this.ws.readyState === WebSocket.OPEN) {
-          const message = {
+          const message: TranslationMessage = {
             type: "translation",
             text,
             from: this.language,
             translated
           };
-
           this.ws.send(JSON.stringify(message));
-          this.onTranscript(text, translated);
         }
       } catch (error) {
         console.error("[Speech] Error:", error);
