@@ -298,6 +298,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
               client.send(data.toString());
             }
           });
+        } else if (message.type === "translation") {
+          const translationMsg = message as TranslationMessage;
+
+          // Store translation in database if we have an active call
+          if (currentRoom) {
+            const call = await callStorage.getCall(currentRoom);
+            if (call) {
+              await callStorage.createTranslation({
+                callId: call.id,
+                sourceText: translationMsg.text,
+                translatedText: translationMsg.translated,
+                fromLanguage: translationMsg.from,
+                toLanguage: translationMsg.from === "es" ? "it" : "es"
+              });
+            }
+          }
         }
       } catch (err) {
         console.error("[WebSocket] Error procesando mensaje:", err);
