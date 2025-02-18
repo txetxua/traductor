@@ -292,11 +292,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const clientsInRoom = rooms.get(currentRoom)!;
           console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
 
-          for (const client of clientsInRoom) {
+          // Usar Array.from para convertir el Set en un array antes de iterarlo
+          Array.from(clientsInRoom).forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(data.toString());
             }
-          }
+          });
         }
       } catch (err) {
         console.error("[WebSocket] Error procesando mensaje:", err);
