@@ -25,109 +25,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }>>();
 
   const httpServer = createServer(app);
+  const rooms = new Map<string, Set<WebSocket>>();
 
   const wss = new WebSocketServer({ 
     server: httpServer,
-    path: '/ws',
-    perMessageDeflate: false
+    path: '/ws'
   });
 
   console.log("[WebSocket] Server initialized on /ws");
 
-  // SSE endpoint para traducciones
-  app.get("/api/translations/stream/:roomId", (req, res) => {
-    const roomId = req.params.roomId;
-    const language = req.query.language as string;
-
-    if (!roomId || !language || !["es", "it"].includes(language)) {
-      console.log("[SSE] Invalid request:", { roomId, language });
-      res.status(400).json({ error: "Invalid room ID or language" });
-      return;
-    }
-
-    console.log(`[SSE] Client connected to room ${roomId} with language ${language}`);
-
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*"
-    });
-
-    const keepAliveInterval = setInterval(() => {
-      res.write(": keepalive\n\n");
-    }, 30000);
-
-    if (!sseClients.has(roomId)) {
-      sseClients.set(roomId, new Set());
-    }
-    const client = { res, language, keepAliveInterval };
-    sseClients.get(roomId)!.add(client);
-
-    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
-
-    req.on("close", () => {
-      console.log(`[SSE] Client disconnected from room ${roomId}`);
-      clearInterval(keepAliveInterval);
-      const roomClients = sseClients.get(roomId);
-      if (roomClients) {
-        roomClients.delete(client);
-        if (roomClients.size === 0) {
-          sseClients.delete(roomId);
-        }
-      }
-    });
-  });
-
-  // Endpoint de traducción usando OpenAI
-  app.post("/api/translate", async (req, res) => {
-    console.log("[Translate] Request received:", req.body);
-    try {
-      const result = translateSchema.safeParse(req.body);
-      if (!result.success) {
-        console.error("[Translate] Invalid request:", result.error);
-        return res.status(400).json({ error: "Invalid translation request" });
-      }
-
-      const { text, from, to, roomId } = result.data;
-      console.log(`[Translate] Processing translation from ${from} to ${to} in room ${roomId}`);
-
-      const translated = await translateText(text, from, to);
-      console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
-
-      const roomClients = sseClients.get(roomId);
-      console.log(`[Translate] Room ${roomId} has ${roomClients?.size || 0} clients`);
-
-      if (roomClients) {
-        const message: TranslationMessage = {
-          type: "translation",
-          text,
-          translated,
-          from,
-          to
-        };
-
-        // Enviar el mensaje a todos los clientes en la sala
-        for (const client of roomClients) {
-          try {
-            console.log(`[Translate] Sending translation message to client with language ${client.language}`);
-            client.res.write(`data: ${JSON.stringify(message)}\n\n`);
-          } catch (error) {
-            console.error(`[Translate] Error sending to client:`, error);
-          }
-        }
-      } else {
-        console.log(`[Translate] No clients found in room ${roomId}`);
-      }
-
-      res.json({ translated });
-    } catch (error) {
-      console.error("[Translate] Error:", error);
-      res.status(500).json({ error: "Translation failed" });
-    }
-  });
-
-  // WebSocket handling
   wss.on("connection", (ws, req) => {
     console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
     let currentRoom: string | null = null;
@@ -175,7 +81,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const roomClients = rooms.get(currentRoom)!;
           console.log(`[WebSocket] Broadcasting ${message.type} in room ${currentRoom}`);
 
-          roomClients.forEach(client => {
+          for (const client of roomClients) {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               try {
                 client.send(JSON.stringify(message));
@@ -183,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.error("[WebSocket] Error broadcasting message:", err);
               }
             }
-          });
+          }
         }
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
@@ -211,6 +117,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  const rooms = new Map<string, Set<WebSocket>>();
+  // SSE endpoint para traducciones
+  app.get("/api/translations/stream/:roomId", (req, res) => {
+    const roomId = req.params.roomId;
+    const language = req.query.language as string;
+
+    if (!roomId || !language || !["es", "it"].includes(language)) {
+      console.log("[SSE] Invalid request:", { roomId, language });
+      res.status(400).json({ error: "Invalid room ID or language" });
+      return;
+    }
+
+    console.log(`[SSE] Client connected to room ${roomId} with language ${language}`);
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*"
+    });
+
+    const keepAliveInterval = setInterval(() => {
+      res.write(": keepalive\n\n");
+    }, 30000);
+
+    if (!sseClients.has(roomId)) {
+      sseClients.set(roomId, new Set());
+    }
+    const client = { res, language, keepAliveInterval };
+    sseClients.get(roomId)!.add(client);
+
+    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+
+    req.on("close", () => {
+      console.log(`[SSE] Client disconnected from room ${roomId}`);
+      clearInterval(keepAliveInterval);
+      const roomClients = sseClients.get(roomId);
+      if (roomClients) {
+        roomClients.delete(client);
+        if (roomClients.size === 0) {
+          sseClients.delete(roomId);
+        }
+      }
+    });
+  });
+
+  // Endpoint de traducción
+  app.post("/api/translate", async (req, res) => {
+    console.log("[Translate] Request received:", req.body);
+    try {
+      const result = translateSchema.safeParse(req.body);
+      if (!result.success) {
+        console.error("[Translate] Invalid request:", result.error);
+        return res.status(400).json({ error: "Invalid translation request" });
+      }
+
+      const { text, from, to, roomId } = result.data;
+      console.log(`[Translate] Processing translation from ${from} to ${to} in room ${roomId}`);
+
+      const translated = await translateText(text, from, to);
+      console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
+
+      const roomClients = sseClients.get(roomId);
+      console.log(`[Translate] Room ${roomId} has ${roomClients?.size || 0} clients`);
+
+      if (roomClients) {
+        const message: TranslationMessage = {
+          type: "translation",
+          text,
+          translated,
+          from,
+          to
+        };
+
+        // Enviar el mensaje a todos los clientes en la sala
+        for (const client of roomClients) {
+          try {
+            console.log(`[Translate] Sending translation message to client with language ${client.language}`);
+            client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+          } catch (error) {
+            console.error(`[Translate] Error sending to client:`, error);
+          }
+        }
+      } else {
+        console.log(`[Translate] No clients found in room ${roomId}`);
+      }
+
+      res.json({ translated });
+    } catch (error) {
+      console.error("[Translate] Error:", error);
+      res.status(500).json({ error: "Translation failed" });
+    }
+  });
+
   return httpServer;
 }

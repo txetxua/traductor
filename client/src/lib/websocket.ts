@@ -37,9 +37,8 @@ export class WebSocketHandler {
 
       const wsUrl = this.getWebSocketUrl();
       console.log("[WebSocket] Connecting to:", wsUrl);
-      console.log("[WebSocket] Using protocol: translation-protocol");
 
-      this.ws = new WebSocket(wsUrl, ['translation-protocol']);
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         console.log("[WebSocket] Connection established");
@@ -62,8 +61,7 @@ export class WebSocketHandler {
         console.log("[WebSocket] Connection closed. Code:", event.code, "Reason:", event.reason);
         this.isConnected = false;
 
-        // No reconectar si el cierre fue limpio (1000) o por protocolo no soportado (1002)
-        if (event.code !== 1000 && event.code !== 1002) {
+        if (event.code !== 1000) {
           if (!this.reconnectTimeout) {
             console.log("[WebSocket] Scheduling reconnection attempt...");
             this.reconnectTimeout = setTimeout(() => {
@@ -75,7 +73,7 @@ export class WebSocketHandler {
             }, 2000);
           }
         } else {
-          console.log("[WebSocket] Clean disconnect or protocol error, not attempting to reconnect");
+          console.log("[WebSocket] Clean disconnect, not attempting to reconnect");
         }
       };
 
