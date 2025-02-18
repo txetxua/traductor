@@ -129,24 +129,17 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           stream.getTracks().forEach(track => track.stop());
         }
 
-        // Check devices
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const hasCamera = devices.some(device => device.kind === 'videoinput');
-        const hasMicrophone = devices.some(device => device.kind === 'audioinput');
-
-        if (!hasCamera && videoEnabled) {
-          throw new Error('No camera detected');
-        }
-
-        if (!hasMicrophone) {
-          throw new Error('No microphone detected');
-        }
-
-        // Get user media stream first
+        console.log("[VideoCall] Requesting media devices...");
         const stream = await navigator.mediaDevices.getUserMedia({
           video: videoEnabled,
           audio: true
+        }).catch((error) => {
+          console.error("[VideoCall] GetUserMedia error:", error);
+          setCameraError(error.message);
+          throw error;
         });
+
+        console.log("[VideoCall] Media stream obtained");
 
         // Set up local video
         if (localVideoRef.current) {
@@ -159,6 +152,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           roomId,
           (remoteStream) => {
             if (!mounted) return;
+            console.log("[VideoCall] Remote stream received");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
               remoteVideoRef.current.play().catch(console.error);
@@ -172,13 +166,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             if (state === 'failed' || state === 'disconnected') {
               toast({
                 variant: "destructive",
-                title: "Connection error",
-                description: "Connection with the other participant lost. Trying to reconnect...",
+                title: "Error de conexión",
+                description: "Se perdió la conexión con el otro participante. Intentando reconectar...",
               });
             } else if (state === 'connected') {
               toast({
-                title: "Connected",
-                description: "Connection established successfully.",
+                title: "Conectado",
+                description: "Conexión establecida exitosamente.",
               });
               setRetryCount(0);
             }
@@ -187,6 +181,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         );
 
         await webrtc.start(stream);
+        console.log("[VideoCall] WebRTC connection started");
 
         stream.getAudioTracks().forEach(track => {
           track.enabled = audioEnabled;
@@ -199,7 +194,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         webrtcRef.current = webrtc;
         speechRef.current = speech;
+
       } catch (error) {
+        console.error("[VideoCall] Initialization error:", error);
         handleError(error as Error);
       }
     }

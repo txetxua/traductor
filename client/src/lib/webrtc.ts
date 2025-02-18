@@ -11,6 +11,7 @@ export class WebRTCConnection {
     private onConnectionStateChange: (state: RTCPeerConnectionState) => void,
     private onError: (error: Error) => void
   ) {
+    console.log("[WebRTC] Initializing for room:", roomId);
     this.initializePeerConnection();
     this.initializeWebSocket();
   }
@@ -19,20 +20,22 @@ export class WebRTCConnection {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
+    console.log("[WebRTC] Connecting to WebSocket:", wsUrl);
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log("[WebRTC] WebSocket conectado");
+      console.log("[WebRTC] WebSocket connected");
       this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
     };
 
     this.ws.onclose = () => {
-      console.log("[WebRTC] WebSocket cerrado");
+      console.log("[WebRTC] WebSocket closed");
+      this.onError(new Error("WebSocket connection closed"));
     };
 
     this.ws.onerror = (error) => {
-      console.error("[WebRTC] Error en WebSocket:", error);
-      this.onError(new Error("Error en la conexión WebSocket"));
+      console.error("[WebRTC] WebSocket error:", error);
+      this.onError(new Error("WebSocket connection error"));
     };
 
     this.ws.onmessage = this.handleWebSocketMessage.bind(this);
@@ -41,7 +44,7 @@ export class WebRTCConnection {
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Mensaje recibido:", message.type);
+      console.log("[WebRTC] Message received:", message.type);
 
       switch (message.type) {
         case "offer":
@@ -60,12 +63,16 @@ export class WebRTCConnection {
 
         case "ice-candidate":
           if (message.payload) {
-            await this.pc.addIceCandidate(message.payload);
+            try {
+              await this.pc.addIceCandidate(message.payload);
+            } catch (err) {
+              console.error("[WebRTC] Error adding ICE candidate:", err);
+            }
           }
           break;
       }
     } catch (err) {
-      console.error("[WebRTC] Error procesando mensaje:", err);
+      console.error("[WebRTC] Error processing message:", err);
       this.onError(err as Error);
     }
   }
@@ -92,13 +99,18 @@ export class WebRTCConnection {
     this.pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
       if (remoteStream) {
+        console.log("[WebRTC] Remote stream received");
         this.onRemoteStream(remoteStream);
       }
     };
 
     this.pc.onconnectionstatechange = () => {
-      console.log("[WebRTC] Estado de conexión:", this.pc.connectionState);
+      console.log("[WebRTC] Connection state:", this.pc.connectionState);
       this.onConnectionStateChange(this.pc.connectionState);
+
+      if (this.pc.connectionState === 'failed') {
+        this.onError(new Error("WebRTC connection failed"));
+      }
     };
 
     this.pc.onnegotiationneeded = async () => {
@@ -110,36 +122,48 @@ export class WebRTCConnection {
           payload: offer
         });
       } catch (err) {
-        console.error("[WebRTC] Error en negociación:", err);
+        console.error("[WebRTC] Negotiation error:", err);
         this.onError(err as Error);
       }
     };
   }
 
+  private sendSignaling(message: SignalingMessage) {
+    if (this.ws.readyState === WebSocket.OPEN) {
+      try {
+        console.log("[WebRTC] Sending message:", message.type);
+        this.ws.send(JSON.stringify(message));
+      } catch (err) {
+        console.error("[WebRTC] Error sending message:", err);
+        this.onError(err as Error);
+      }
+    } else {
+      console.error("[WebRTC] WebSocket not open");
+      this.onError(new Error("WebSocket not connected"));
+    }
+  }
+
   async start(stream: MediaStream) {
     try {
+      console.log("[WebRTC] Starting with stream");
       this.stream = stream;
 
       this.stream.getTracks().forEach(track => {
         if (this.stream) {
+          console.log("[WebRTC] Adding track:", track.kind);
           this.pc.addTrack(track, this.stream);
         }
       });
 
     } catch (err) {
-      console.error("[WebRTC] Error al iniciar:", err);
+      console.error("[WebRTC] Error starting:", err);
       this.onError(err as Error);
       throw err;
     }
   }
 
-  private sendSignaling(message: SignalingMessage) {
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    }
-  }
-
   close() {
+    console.log("[WebRTC] Closing connection");
     this.stream?.getTracks().forEach(track => track.stop());
     this.pc.close();
     if (this.ws.readyState === WebSocket.OPEN) {
