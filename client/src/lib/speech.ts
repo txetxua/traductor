@@ -1,6 +1,9 @@
 import { type Language } from "@shared/schema";
 import { TranslationHandler } from "./translations";
 
+type TranscriptCallback = (text: string, isLocal: boolean) => void;
+type ErrorCallback = (error: Error) => void;
+
 export class SpeechHandler {
   private recognition?: SpeechRecognition;
   private translationHandler: TranslationHandler;
@@ -9,35 +12,34 @@ export class SpeechHandler {
   constructor(
     private roomId: string,
     private language: Language,
-    private onTranscript: (text: string, isLocal: boolean) => void,
-    private onError?: (error: Error) => void
+    private onTranscript: TranscriptCallback,
+    private onError?: ErrorCallback
   ) {
     console.log("[Speech] Initializing for room:", roomId, "language:", language);
-
     this.translationHandler = new TranslationHandler(
       roomId,
       language,
       onTranscript,
       onError
     );
-
     this.setupRecognition();
   }
 
   private setupRecognition() {
-    // Check for browser support
-    if (!('webkitSpeechRecognition' in window)) {
-      this.onError?.(new Error("Speech recognition is not supported in this browser"));
-      return;
-    }
-
     try {
-      // @ts-ignore - webkitSpeechRecognition is not in types
-      this.recognition = new webkitSpeechRecognition();
-      this.recognition.continuous = true;
-      this.recognition.interimResults = false;
+      // Check for browser support
+      if (!('webkitSpeechRecognition' in window)) {
+        throw new Error("Speech recognition is not supported in this browser. Try using Chrome.");
+      }
 
-      // Improved language mapping for speech recognition
+      // Initialize recognition
+      this.recognition = new webkitSpeechRecognition();
+
+      // Configure recognition settings
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+
+      // Set language based on the selected language
       const langMap: Record<Language, string> = {
         es: "es-ES",
         it: "it-IT"
@@ -46,6 +48,7 @@ export class SpeechHandler {
       console.log("[Speech] Setting language to:", langMap[this.language]);
       this.recognition.lang = langMap[this.language];
 
+      // Event handlers
       this.recognition.onstart = () => {
         console.log("[Speech] Recognition started for language:", this.language);
         this.isStarted = true;
@@ -65,37 +68,42 @@ export class SpeechHandler {
         }
       };
 
-      this.recognition.onerror = (event: any) => {
-        // Ignore no-speech errors as they're common during silences
+      this.recognition.onerror = (event) => {
         if (event.error === 'no-speech') {
           console.log("[Speech] No speech detected");
           return;
         }
 
-        console.error("[Speech] Recognition error:", event.error);
+        console.error("[Speech] Recognition error:", event.error, event.message);
         this.onError?.(new Error(`Speech recognition error: ${event.error}`));
       };
 
-      this.recognition.onresult = async (event: any) => {
+      this.recognition.onresult = async (event: SpeechRecognitionEvent) => {
         try {
-          const text = event.results[event.results.length - 1][0].transcript;
-          console.log("[Speech] Text recognized:", text, "Language:", this.language);
+          const result = event.results[event.results.length - 1];
+          if (result.isFinal) {
+            const text = result[0].transcript.trim();
+            console.log("[Speech] Text recognized:", text, "Language:", this.language);
 
-          if (!text.trim()) {
-            console.log("[Speech] Empty text, ignoring");
-            return;
+            if (!text) {
+              console.log("[Speech] Empty text, ignoring");
+              return;
+            }
+
+            // Show local transcription immediately
+            console.log("[Speech] Sending local transcript");
+            this.onTranscript(text, true);
+
+            // Send for translation
+            console.log("[Speech] Requesting translation");
+            await this.translationHandler.translate(text);
           }
-
-          // Show local transcription immediately
-          this.onTranscript(text, true);
-
-          // Send for translation
-          await this.translationHandler.translate(text);
         } catch (error) {
           console.error("[Speech] Error processing speech result:", error);
           this.onError?.(error as Error);
         }
       };
+
     } catch (error) {
       console.error("[Speech] Error setting up recognition:", error);
       this.onError?.(error as Error);
