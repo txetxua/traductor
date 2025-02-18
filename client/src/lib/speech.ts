@@ -2,7 +2,7 @@ import { type Language } from "@shared/schema";
 import { TranslationHandler } from "./translations";
 
 export class SpeechHandler {
-  private recognition?: any;
+  private recognition?: SpeechRecognition;
   private translationHandler: TranslationHandler;
   private isStarted: boolean = false;
 
@@ -12,7 +12,7 @@ export class SpeechHandler {
     private onTranscript: (text: string, isLocal: boolean) => void,
     private onError?: (error: Error) => void
   ) {
-    console.log("[Speech] Starting for room:", roomId, "language:", language);
+    console.log("[Speech] Initializing for room:", roomId, "language:", language);
 
     this.translationHandler = new TranslationHandler(
       roomId,
@@ -25,17 +25,19 @@ export class SpeechHandler {
   }
 
   private setupRecognition() {
-    if (!("webkitSpeechRecognition" in window)) {
-      this.onError?.(new Error("Speech recognition not supported"));
+    // Check for browser support
+    if (!('webkitSpeechRecognition' in window)) {
+      this.onError?.(new Error("Speech recognition is not supported in this browser"));
       return;
     }
 
     try {
-      this.recognition = new (window as any).webkitSpeechRecognition();
+      // @ts-ignore - webkitSpeechRecognition is not in types
+      this.recognition = new webkitSpeechRecognition();
       this.recognition.continuous = true;
       this.recognition.interimResults = false;
 
-      // Mapeo mejorado de idiomas para el reconocimiento de voz
+      // Improved language mapping for speech recognition
       const langMap: Record<Language, string> = {
         es: "es-ES",
         it: "it-IT"
@@ -51,11 +53,11 @@ export class SpeechHandler {
 
       this.recognition.onend = () => {
         console.log("[Speech] Recognition ended");
-        // Solo reiniciar si todavía estamos activos
+        // Only restart if we're still active
         if (this.isStarted) {
           console.log("[Speech] Restarting recognition");
           try {
-            this.recognition.start();
+            this.recognition?.start();
           } catch (error) {
             console.error("[Speech] Error restarting recognition:", error);
             this.onError?.(error as Error);
@@ -64,7 +66,7 @@ export class SpeechHandler {
       };
 
       this.recognition.onerror = (event: any) => {
-        // Ignorar errores de "no-speech" ya que son comunes durante silencios
+        // Ignore no-speech errors as they're common during silences
         if (event.error === 'no-speech') {
           console.log("[Speech] No speech detected");
           return;
@@ -84,10 +86,10 @@ export class SpeechHandler {
             return;
           }
 
-          // Mostrar transcripción local inmediatamente
+          // Show local transcription immediately
           this.onTranscript(text, true);
 
-          // Enviar para traducción
+          // Send for translation
           await this.translationHandler.translate(text);
         } catch (error) {
           console.error("[Speech] Error processing speech result:", error);

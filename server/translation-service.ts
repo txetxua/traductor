@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import { type Language } from "@shared/schema";
 
-const openai = new OpenAI();
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 export async function translateText(text: string, from: Language, to: Language): Promise<string> {
   if (from === to) return text;
@@ -35,7 +37,7 @@ Translation:`;
     console.log(`[Translation Service] Translation result: "${translation}"`);
     return translation;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("[Translation Service] Error:", error);
     throw new Error(`Translation failed: ${error.message}`);
   }
