@@ -36,12 +36,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [cameraError, setCameraError] = useState<string>();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
+  const [isLocalUser, setIsLocalUser] = useState(true); // Added state to track user role
 
   useEffect(() => {
     console.log("Configurando reconocimiento de voz para idioma:", language);
 
     const handleSpeechResult = (text: string, translatedText: string) => {
-      console.log("Recibido texto y traducción:", { text, translatedText });
+      console.log("Texto recibido:", text);
+      console.log("Traducción recibida:", translatedText);
       setTranscript(text);
       setTranslated(translatedText);
     };
@@ -101,6 +103,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
               remoteVideoRef.current.srcObject = stream;
               remoteVideoRef.current.play().catch(console.error);
             }
+            setIsLocalUser(false); // Set to false when remote stream is received
           },
           (state) => {
             console.log("Estado de conexión cambiado a:", state);
@@ -203,7 +206,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
         <Subtitles
-          transcript={transcript}
+          transcript={isLocalUser ? "" : transcript}  // Only show transcript for remote user
           translated={translated}
           config={subtitlesConfig}
         />

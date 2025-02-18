@@ -26,15 +26,19 @@ export class SpeechHandler {
       this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
     };
 
+    this.ws.onclose = () => {
+      console.log("[Speech] WebSocket cerrado");
+    };
+
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         if (message.type === "translation") {
           const translationMsg = message as TranslationMessage;
-          // Solo mostramos mensajes que vienen del otro participante
+          // Solo procesamos mensajes del otro participante
           if (translationMsg.from !== this.language) {
-            console.log("[Speech] Traducción recibida del otro participante:", translationMsg);
-            // Mostramos el texto original y la traducción para el receptor
+            console.log("[Speech] Traducción recibida:", translationMsg);
+            // El receptor ve el texto original y la traducción
             this.onTranscript(translationMsg.text, translationMsg.translated);
           }
         }
@@ -87,7 +91,6 @@ export class SpeechHandler {
       console.log("[Speech] Texto reconocido:", text);
 
       try {
-        // Obtener la traducción del servidor
         const response = await fetch("/api/translate", {
           method: "POST",
           headers: {
@@ -105,9 +108,9 @@ export class SpeechHandler {
         }
 
         const { translated } = await response.json();
-        console.log("[Speech] Traducción recibida del servidor:", translated);
+        console.log("[Speech] Traducción obtenida:", translated);
 
-        // Para el emisor, mostramos el texto original
+        // El emisor solo ve su texto original
         this.onTranscript(text, "");
 
         // Enviar al otro participante
