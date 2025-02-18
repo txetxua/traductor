@@ -68,18 +68,24 @@ export class WebRTCConnection {
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Mensaje recibido:", message.type, "Estado:", this.pc.signalingState);
+      console.log("[WebRTC] Mensaje recibido:", message.type, "Estado actual:", this.pc.signalingState);
 
       switch (message.type) {
         case "offer":
           if (this.pc.signalingState !== "stable") {
-            console.log("[WebRTC] Ignorando oferta en estado no estable");
-            return;
+            console.log("[WebRTC] Rollback necesario, estado actual:", this.pc.signalingState);
+            await Promise.all([
+              this.pc.setLocalDescription({type: "rollback"}),
+              this.pc.setRemoteDescription(new RTCSessionDescription(message.payload))
+            ]);
+          } else {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           }
-          this.isInitiator = false;
-          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+
+          console.log("[WebRTC] Oferta establecida, creando respuesta");
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
+
           this.sendSignaling({
             type: "answer",
             payload: answer
@@ -87,22 +93,24 @@ export class WebRTCConnection {
           break;
 
         case "answer":
-          if (this.pc.signalingState !== "have-local-offer") {
-            console.log("[WebRTC] Ignorando respuesta sin oferta local");
-            return;
+          console.log("[WebRTC] Procesando respuesta en estado:", this.pc.signalingState);
+          if (this.pc.signalingState === "have-local-offer") {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+          } else {
+            console.warn("[WebRTC] Ignorando respuesta en estado incorrecto:", this.pc.signalingState);
           }
-          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
-          if (this.pc.remoteDescription) {
-            try {
+          try {
+            if (this.pc.remoteDescription) {
               await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
-            } catch (err) {
-              console.warn("[WebRTC] Error al agregar candidato ICE:", err);
+              console.log("[WebRTC] Candidato ICE agregado exitosamente");
+            } else {
+              console.log("[WebRTC] Guardando candidato ICE para más tarde - sin descripción remota");
             }
-          } else {
-            console.log("[WebRTC] Ignorando candidato ICE sin descripción remota");
+          } catch (err) {
+            console.warn("[WebRTC] Error al agregar candidato ICE:", err);
           }
           break;
       }
@@ -210,23 +218,25 @@ export class WebRTCConnection {
 
       this.stream.getTracks().forEach(track => {
         if (this.stream) {
+          console.log("[WebRTC] Agregando track:", track.kind);
           this.pc.addTrack(track, this.stream);
         }
       });
 
-      const offer = await this.pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
+      if (this.isInitiator) {
+        console.log("[WebRTC] Creando oferta como iniciador");
+        const offer = await this.pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
 
-      if (this.pc.signalingState === "stable") {
+        console.log("[WebRTC] Estado antes de establecer oferta local:", this.pc.signalingState);
         await this.pc.setLocalDescription(offer);
+
         this.sendSignaling({
           type: "offer",
           payload: offer
         });
-      } else {
-        console.warn("[WebRTC] No se puede crear oferta en estado:", this.pc.signalingState);
       }
 
       return this.stream;
