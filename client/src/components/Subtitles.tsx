@@ -17,7 +17,7 @@ export default function Subtitles({ transcript, translated, config }: Props) {
     maxWidth: "80%",
     margin: "0 auto",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    padding: "4px 8px",
+    padding: "8px 12px",
     borderRadius: "4px",
     lineHeight: "1.5"
   };
@@ -26,7 +26,7 @@ export default function Subtitles({ transcript, translated, config }: Props) {
     <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
       {transcript && (
         <div 
-          className="px-3 py-2 rounded-lg font-medium text-center"
+          className="text-center"
           style={subtitleStyle}
         >
           {transcript}
@@ -34,8 +34,12 @@ export default function Subtitles({ transcript, translated, config }: Props) {
       )}
       {translated && transcript !== translated && (
         <div 
-          className="px-3 py-2 rounded-lg font-medium text-center opacity-90"
-          style={{...subtitleStyle, fontSize: `${config.fontSize * 0.9}px`}}
+          className="text-center opacity-90"
+          style={{
+            ...subtitleStyle,
+            fontSize: `${config.fontSize * 0.9}px`,
+            backgroundColor: "rgba(0, 0, 0, 0.4)"
+          }}
         >
           {translated}
         </div>
