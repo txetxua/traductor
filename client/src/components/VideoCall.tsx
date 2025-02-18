@@ -56,8 +56,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
   useEffect(() => {
     let mounted = true;
+    let currentStream: MediaStream | null = null;
 
     const handleSpeechResult = (text: string, isLocal: boolean) => {
+      if (!mounted) return;
       console.log(`[VideoCall] ${isLocal ? 'Local' : 'Remote'} transcript received:`, text);
 
       if (isLocal) {
@@ -103,44 +105,50 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
     async function initializeCall() {
       if (!mounted) return;
+
       try {
         setCameraError(undefined);
 
-        // Liberar tracks existentes
-        if (localVideoRef.current?.srcObject) {
-          const stream = localVideoRef.current.srcObject as MediaStream;
-          stream.getTracks().forEach(track => track.stop());
+        // Clean up existing stream
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+          currentStream = null;
         }
 
-        console.log("[VideoCall] Solicitando acceso a dispositivos multimedia...");
+        console.log("[VideoCall] Requesting media devices...");
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true, // Siempre solicitar video primero
-          audio: true
-        }).catch((error) => {
-          console.error("[VideoCall] Error obteniendo dispositivos:", error);
-          setCameraError(error.message);
-          throw error;
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          }
         });
 
-        console.log("[VideoCall] Stream multimedia obtenido");
+        currentStream = stream;
+        console.log("[VideoCall] Media stream obtained");
 
         if (!mounted) {
           stream.getTracks().forEach(track => track.stop());
           return;
         }
 
-        // Configurar video local
+        // Set up local video
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           await localVideoRef.current.play().catch(console.error);
         }
 
-        // Inicializar WebRTC con el stream
+        // Initialize WebRTC
         const webrtc = new WebRTCConnection(
           roomId,
           (remoteStream) => {
             if (!mounted) return;
-            console.log("[VideoCall] Stream remoto recibido");
+            console.log("[VideoCall] Remote stream received");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
               remoteVideoRef.current.play().catch(console.error);
@@ -148,7 +156,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           },
           (state) => {
             if (!mounted) return;
-            console.log("[VideoCall] Estado de conexión:", state);
+            console.log("[VideoCall] Connection state:", state);
             setConnectionState(state);
 
             if (state === 'failed' || state === 'disconnected') {
@@ -169,9 +177,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         );
 
         await webrtc.start(stream);
-        console.log("[VideoCall] Conexión WebRTC iniciada");
+        console.log("[VideoCall] WebRTC connection started");
 
-        // Configurar estado inicial de audio/video
+        // Set initial audio/video state
         stream.getAudioTracks().forEach(track => {
           track.enabled = audioEnabled;
         });
@@ -179,14 +187,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           track.enabled = videoEnabled;
         });
 
-        // Iniciar reconocimiento de voz
+        // Start speech recognition
         const speech = new SpeechHandler(
           roomId,
           language,
           handleSpeechResult,
           (error: Error) => {
             if (!mounted) return;
-            console.error("[VideoCall] Error en reconocimiento de voz:", error);
+            console.error("[VideoCall] Speech recognition error:", error);
             toast({
               variant: "destructive",
               title: "Error en reconocimiento de voz",
@@ -200,7 +208,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         speechRef.current = speech;
 
       } catch (error) {
-        console.error("[VideoCall] Error de inicialización:", error);
+        console.error("[VideoCall] Initialization error:", error);
         handleError(error as Error);
       }
     }
@@ -215,9 +223,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       if (remoteTimerRef.current) {
         clearTimeout(remoteTimerRef.current);
       }
-      if (localVideoRef.current?.srcObject) {
-        const stream = localVideoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
       }
       webrtcRef.current?.close();
       speechRef.current?.stop();
@@ -225,8 +232,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   }, [roomId, language, toast, videoEnabled, audioEnabled, retryCount]);
 
   const handleHangup = () => {
-    if (localVideoRef.current?.srcObject) {
-      const stream = localVideoRef.current.srcObject as MediaStream;
+    const stream = localVideoRef.current?.srcObject as MediaStream;
+    if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
     webrtcRef.current?.close();
@@ -290,7 +297,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
               transcript={localTranscript}
               config={{
                 ...subtitlesConfig,
-                color: "rgba(255, 255, 255, 0.7)" // Subtítulos locales más transparentes
+                color: "rgba(255, 255, 255, 0.7)"
               }}
             />
           )}
