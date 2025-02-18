@@ -1,0 +1,101 @@
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+hook.js:608 Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. Error Component Stack
+    at DescriptionWarning (@radix-ui_react-dialog.js?v=09ee3b2c:326:29)
+    at @radix-ui_react-dialog.js?v=09ee3b2c:230:13
+    at @radix-ui_react-dialog.js?v=09ee3b2c:153:58
+    at Presence (chunk-ICJYMBXH.js?v=09ee3b2c:24:11)
+    at @radix-ui_react-dialog.js?v=09ee3b2c:144:64
+    at chunk-TQG5UYZM.js?v=09ee3b2c:52:11
+    at chunk-TQG5UYZM.js?v=09ee3b2c:33:11
+    at chunk-RDHMCQ3E.js?v=09ee3b2c:41:13
+    at chunk-YVUCVALL.js?v=09ee3b2c:258:22
+    at Presence (chunk-ICJYMBXH.js?v=09ee3b2c:24:11)
+    at Provider (chunk-4RVVHOT3.js?v=09ee3b2c:48:15)
+    at DialogPortal (@radix-ui_react-dialog.js?v=09ee3b2c:107:11)
+    at _c3 (dialog.tsx:33:6)
+    at Provider (chunk-4RVVHOT3.js?v=09ee3b2c:48:15)
+    at Dialog (@radix-ui_react-dialog.js?v=09ee3b2c:48:5)
+    at SubtitlesConfig (SubtitlesConfig.tsx:33:43)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at VideoCall (VideoCall.tsx:24:37)
+    at div (<anonymous>)
+    at Call (call.tsx:7:22)
+    at Route (wouter.js?v=09ee3b2c:323:16)
+    at Switch (wouter.js?v=09ee3b2c:379:17)
+    at Router (<anonymous>)
+    at QueryClientProvider (@tanstack_react-query.js?v=09ee3b2c:2805:3)
+    at App (<anonymous>)
+overrideMethod @ hook.js:608Understand this warningAI
+speech.ts:52 [Speech] Recognition started for language: es
+hook.js:608 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608Understand this errorAI
+hook.js:608 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+speech.ts:52 [Speech] Recognition started for language: es
+hook.js:608 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608Understand this errorAI
+hook.js:608 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+speech.ts:52 [Speech] Recognition started for language: es
+speech.ts:73 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608
+recognition.onerror @ speech.ts:73Understand this errorAI
+VideoCall.tsx:189 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608
+(anonymous) @ VideoCall.tsx:189
+recognition.onerror @ speech.ts:89Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+speech.ts:52 [Speech] Recognition started for language: es
+speech.ts:73 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608
+recognition.onerror @ speech.ts:73Understand this errorAI
+VideoCall.tsx:189 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608
+(anonymous) @ VideoCall.tsx:189
+recognition.onerror @ speech.ts:89Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+speech.ts:52 [Speech] Recognition started for language: es
+speech.ts:73 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608
+recognition.onerror @ speech.ts:73Understand this errorAI
+VideoCall.tsx:189 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608
+(anonymous) @ VideoCall.tsx:189
+recognition.onerror @ speech.ts:89Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+speech.ts:52 [Speech] Recognition started for language: es
+speech.ts:73 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608
+recognition.onerror @ speech.ts:73Understand this errorAI
+VideoCall.tsx:189 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608
+(anonymous) @ VideoCall.tsx:189
+recognition.onerror @ speech.ts:89Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition
+speech.ts:52 [Speech] Recognition started for language: es
+speech.ts:73 [Speech] Recognition error: aborted 
+overrideMethod @ hook.js:608
+recognition.onerror @ speech.ts:73Understand this errorAI
+VideoCall.tsx:189 [VideoCall] Error en reconocimiento de voz: Error: Speech recognition error: aborted
+    at recognition.onerror (speech.ts:89:24)
+overrideMethod @ hook.js:608
+(anonymous) @ VideoCall.tsx:189
+recognition.onerror @ speech.ts:89Understand this errorAI
+speech.ts:57 [Speech] Recognition ended
+speech.ts:60 [Speech] Restarting recognition

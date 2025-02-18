@@ -9,6 +9,7 @@ export class TranslationHandler {
   private isConnected = false;
   private retryCount = 0;
   private maxRetries = 3;
+  private pendingTranslations = new Set<string>();
 
   constructor(
     private roomId: string,
@@ -65,7 +66,14 @@ export class TranslationHandler {
               language: this.language
             });
 
+            // Remove from pending translations if it was one we sent
+            if (isLocal) {
+              this.pendingTranslations.delete(message.text);
+            }
+
             this.onTranslation(text, isLocal);
+          } else if (message.type === "connected") {
+            console.log("[Translations] Connection confirmed");
           }
         } catch (error) {
           console.error("[Translations] Message processing error:", error);
@@ -107,9 +115,16 @@ export class TranslationHandler {
       return;
     }
 
+    if (this.pendingTranslations.has(text)) {
+      console.log("[Translations] Translation already pending for:", text);
+      return;
+    }
+
     try {
       console.log("[Translations] Requesting translation for:", text);
       console.log("[Translations] Current language:", this.language);
+
+      this.pendingTranslations.add(text);
 
       const response = await fetch(`${this.getApiBaseUrl()}/api/translate`, {
         method: "POST",
@@ -130,6 +145,7 @@ export class TranslationHandler {
       console.log("[Translations] Translation response:", data);
     } catch (error) {
       console.error("[Translations] Translation error:", error);
+      this.pendingTranslations.delete(text);
       this.onError?.(error as Error);
     }
   }
@@ -146,6 +162,7 @@ export class TranslationHandler {
     }
 
     this.isConnected = false;
+    this.pendingTranslations.clear();
   }
 
   stop() {
