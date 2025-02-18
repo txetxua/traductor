@@ -29,51 +29,35 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [localTranscript, setLocalTranscript] = useState("");
-  const [remoteTranscript, setRemoteTranscript] = useState("");
+  const [transcript, setTranscript] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
   const [cameraError, setCameraError] = useState<string>();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
 
-  // Refs para los timers de limpieza de subtítulos
-  const localTimerRef = useRef<NodeJS.Timeout>();
-  const remoteTimerRef = useRef<NodeJS.Timeout>();
+  // Timer para limpiar los subtítulos
+  const timerRef = useRef<NodeJS.Timeout>();
 
-  const clearTranscriptAfterDelay = (
-    isLocal: boolean,
-    delay: number = 5000
-  ) => {
-    const timerRef = isLocal ? localTimerRef : remoteTimerRef;
+  const clearTranscriptAfterDelay = (delay: number = 5000) => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
-
     timerRef.current = setTimeout(() => {
-      if (isLocal) {
-        setLocalTranscript("");
-      } else {
-        setRemoteTranscript("");
-      }
+      setTranscript("");
     }, delay);
   };
 
   useEffect(() => {
     const handleSpeechResult = (text: string, isLocal: boolean) => {
-      console.log("[VideoCall] Recibido texto:", text, "isLocal:", isLocal);
-
-      // Si es un mensaje local (el que hablamos)
-      if (isLocal) {
-        setLocalTranscript(text);
-      } 
-      // Si es un mensaje remoto (traducido del otro participante)
-      else {
-        setRemoteTranscript(text);
+      // Solo mostramos el texto si:
+      // - Es un mensaje local y somos el receptor (italiano)
+      // - Es un mensaje remoto y somos el emisor (español)
+      if ((isLocal && language === "it") || (!isLocal && language === "es")) {
+        console.log("[VideoCall] Mostrando texto:", text);
+        setTranscript(text);
+        clearTranscriptAfterDelay();
       }
-
-      // Programar la limpieza del mensaje correspondiente
-      clearTranscriptAfterDelay(isLocal);
     };
 
     const speech = new SpeechHandler(
@@ -175,12 +159,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     initializeCall();
 
     return () => {
-      // Limpiar los timers al desmontar
-      if (localTimerRef.current) {
-        clearTimeout(localTimerRef.current);
-      }
-      if (remoteTimerRef.current) {
-        clearTimeout(remoteTimerRef.current);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
       }
       webrtcRef.current?.close();
       speechRef.current?.stop();
@@ -245,16 +225,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         {/* Contenedor de subtítulos */}
         <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
-          {localTranscript && (
+          {transcript && (
             <Subtitles
-              transcript={localTranscript}
-              config={{...subtitlesConfig, color: "yellow"}} // Color amarillo para mensajes locales
-            />
-          )}
-          {remoteTranscript && (
-            <Subtitles
-              transcript={remoteTranscript}
-              config={subtitlesConfig} // Color normal para mensajes traducidos
+              transcript={transcript}
+              config={subtitlesConfig}
             />
           )}
         </div>

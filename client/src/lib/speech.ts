@@ -49,10 +49,6 @@ export class SpeechHandler {
       this.reconnectAttempts++;
       console.log(`[Speech] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
 
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-      }
-
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
       this.reconnectTimeout = setTimeout(() => {
         this.initializeWebSocket();
@@ -68,18 +64,22 @@ export class SpeechHandler {
       const message = JSON.parse(event.data);
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;
-        console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Si el mensaje es de otro participante (diferente idioma)
-        if (translationMsg.from !== this.language) {
-          console.log(`[Speech] Procesando traducción de ${translationMsg.from} a ${this.language}`);
-          console.log(`[Speech] Texto original: "${translationMsg.text}"`);
-          console.log(`[Speech] Texto traducido: "${translationMsg.translated}"`);
+        // Solo procesamos las traducciones que nos interesan:
+        // - Si somos el emisor (español), mostramos las traducciones del italiano
+        // - Si somos el receptor (italiano), mostramos los mensajes originales en español
+        if (
+          (this.language === "es" && translationMsg.from === "it") ||
+          (this.language === "it" && translationMsg.from === "es")
+        ) {
+          console.log(`[Speech] Mostrando mensaje de ${translationMsg.from}:`, 
+            this.language === "es" ? translationMsg.translated : translationMsg.text);
 
-          // El receptor ve la traducción en su idioma
-          this.onTranscript(translationMsg.translated, false);
-        } else {
-          console.log(`[Speech] Ignorando mensaje en mismo idioma (${this.language})`);
+          // El emisor (español) ve la traducción, el receptor (italiano) ve el original
+          this.onTranscript(
+            this.language === "es" ? translationMsg.translated : translationMsg.text,
+            false
+          );
         }
       }
     } catch (error) {
@@ -126,7 +126,6 @@ export class SpeechHandler {
 
     this.recognition.onerror = (event: any) => {
       if (event.error === 'no-speech') {
-        // Ignorar este error ya que es común cuando no hay habla
         return;
       }
       console.error("[Speech] Error en reconocimiento:", event.error);
@@ -136,46 +135,47 @@ export class SpeechHandler {
     this.recognition.onresult = this.onresult.bind(this);
   }
 
-
   private async handleRecognitionResult(text: string) {
     try {
       console.log(`[Speech] Texto reconocido en ${this.language}:`, text);
 
-      // El emisor ve su texto original
-      this.onTranscript(text, true);
-
-      // Traducir antes de enviar
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text,
-          from: this.language,
-          to: this.language === "es" ? "it" : "es"
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error de traducción: ${response.status}`);
+      // El receptor (italiano) ve su propio texto, el emisor (español) no
+      if (this.language === "it") {
+        this.onTranscript(text, true);
       }
 
-      const { translated } = await response.json();
-      console.log(`[Speech] Texto traducido de ${this.language} a ${this.language === "es" ? "it" : "es"}:`, translated);
+      // Solo traducimos si es necesario (cuando el emisor habla español)
+      if (this.language === "es" || this.language === "it") {
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            from: this.language,
+            to: this.language === "es" ? "it" : "es"
+          }),
+        });
 
-      // Enviar mensaje con traducción al otro participante
-      if (this.ws.readyState === WebSocket.OPEN) {
-        const message: TranslationMessage = {
-          type: "translation",
-          text: text,
-          from: this.language,
-          translated: translated
-        };
-        console.log("[Speech] Enviando mensaje de traducción:", message);
-        this.ws.send(JSON.stringify(message));
-      } else {
-        throw new Error("La conexión WebSocket está cerrada");
+        if (!response.ok) {
+          throw new Error(`Error de traducción: ${response.status}`);
+        }
+
+        const { translated } = await response.json();
+
+        if (this.ws.readyState === WebSocket.OPEN) {
+          const message: TranslationMessage = {
+            type: "translation",
+            text: text,
+            from: this.language,
+            translated: translated
+          };
+          console.log("[Speech] Enviando mensaje de traducción:", message);
+          this.ws.send(JSON.stringify(message));
+        } else {
+          throw new Error("La conexión WebSocket está cerrada");
+        }
       }
     } catch (error) {
       console.error("[Speech] Error:", error);
@@ -187,7 +187,6 @@ export class SpeechHandler {
     const text = event.results[event.results.length - 1][0].transcript;
     await this.handleRecognitionResult(text);
   };
-
 
   start() {
     if (this.recognition && !this.isStarted) {
