@@ -92,7 +92,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { text, from, to, roomId } = result.data;
       console.log(`[Translate] Processing translation from ${from} to ${to} in room ${roomId}`);
 
-      // Usar el nuevo servicio de traducción
       const translated = await translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
@@ -108,22 +107,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
-        let sentToSomeone = false;
-        roomClients.forEach(client => {
-          if (client.language === to) {
-            try {
-              console.log(`[Translate] Sending translation to client with language ${client.language}`);
-              client.res.write(`data: ${JSON.stringify(message)}\n\n`);
-              sentToSomeone = true;
-            } catch (error) {
-              console.error(`[Translate] Error sending to client:`, error);
-            }
-          } else {
-            console.log(`[Translate] Skipping client with language ${client.language} (not target language ${to})`);
+        // Enviar el mensaje a todos los clientes en la sala
+        for (const client of roomClients) {
+          try {
+            console.log(`[Translate] Sending translation message to client with language ${client.language}`);
+            client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+          } catch (error) {
+            console.error(`[Translate] Error sending to client:`, error);
           }
-        });
-
-        console.log(`[Translate] Translation ${sentToSomeone ? 'was' : 'was not'} sent to any clients`);
+        }
       } else {
         console.log(`[Translate] No clients found in room ${roomId}`);
       }

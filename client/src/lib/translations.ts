@@ -53,13 +53,13 @@ export class TranslationHandler {
 
           if (message.type === "translation") {
             if (message.from === this.language) {
-              // Mostrar el texto original para el emisor
-              console.log("[Translations] Showing original text in", this.language, ":", message.text);
-              this.onTranslation(message.text, true);
+              // Si el mensaje es de nuestro idioma, mostramos la traducción al receptor
+              console.log("[Translations] Remote transcript (receiver):", message.text);
+              this.onTranslation(message.text, false);
             } else if (message.to === this.language) {
-              // Mostrar el texto traducido para el receptor
-              console.log("[Translations] Showing translated text in", this.language, ":", message.translated);
-              this.onTranslation(message.translated, false);
+              // Si el mensaje está traducido a nuestro idioma, mostramos la traducción al emisor
+              console.log("[Translations] Remote translation (sender):", message.translated);
+              this.onTranslation(message.translated, true);
             }
           }
         } catch (error) {
@@ -102,10 +102,7 @@ export class TranslationHandler {
 
     try {
       const baseUrl = this.getApiBaseUrl();
-      console.log("[Translations] Original text:", text, "in language:", this.language);
-
-      // Mostrar el texto original inmediatamente para el emisor
-      this.onTranslation(text, true);
+      console.log("[Translations] Sending text for translation:", text);
 
       // Determinar el idioma de destino (opuesto al idioma actual)
       const targetLanguage: Language = this.language === "es" ? "it" : "es";
