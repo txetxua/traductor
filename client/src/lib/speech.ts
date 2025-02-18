@@ -10,6 +10,7 @@ export class SpeechHandler {
   private recognition?: any;
   private ws: WebSocket;
   private isStarted: boolean = false;
+  private reconnectTimeout?: NodeJS.Timeout;
 
   constructor(
     private roomId: string,
@@ -21,19 +22,33 @@ export class SpeechHandler {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log("Speech WebSocket connected");
+      console.log("[Speech] WebSocket conectado");
       this.ws.send(JSON.stringify({ type: "join", roomId }));
     };
 
-    this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === "translation") {
-        const translationMsg = message as TranslationMessage;
-        // Solo mostramos la traducción si el mensaje viene del otro participante
-        if (translationMsg.from !== this.language) {
-          console.log("Recibida traducción del otro participante:", translationMsg);
-          this.onTranscript(translationMsg.text, translationMsg.translated);
+    this.ws.onclose = () => {
+      console.log("[Speech] WebSocket cerrado, intentando reconectar...");
+      // Intentar reconectar en 2 segundos
+      this.reconnectTimeout = setTimeout(() => {
+        if (this.isStarted) {
+          this.ws = new WebSocket(wsUrl);
         }
+      }, 2000);
+    };
+
+    this.ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === "translation") {
+          const translationMsg = message as TranslationMessage;
+          // Solo mostramos la traducción si el mensaje viene del otro participante
+          if (translationMsg.from !== this.language) {
+            console.log("[Speech] Traducción recibida:", translationMsg);
+            this.onTranscript(translationMsg.text, translationMsg.translated);
+          }
+        }
+      } catch (error) {
+        console.error("[Speech] Error procesando mensaje:", error);
       }
     };
 
@@ -42,7 +57,7 @@ export class SpeechHandler {
 
   private setupRecognition() {
     if (!("webkitSpeechRecognition" in window)) {
-      console.error("Speech recognition not supported");
+      console.error("[Speech] Reconocimiento de voz no soportado");
       return;
     }
 
@@ -58,18 +73,22 @@ export class SpeechHandler {
     this.recognition.lang = langMap[this.language];
 
     this.recognition.onstart = () => {
-      console.log("Speech recognition started");
+      console.log("[Speech] Reconocimiento de voz iniciado");
       this.isStarted = true;
     };
 
     this.recognition.onend = () => {
-      console.log("Speech recognition ended");
+      console.log("[Speech] Reconocimiento de voz finalizado");
       // Reiniciar si todavía está activo
       if (this.isStarted) {
-        console.log("Restarting speech recognition");
+        console.log("[Speech] Reiniciando reconocimiento de voz");
         setTimeout(() => {
           if (this.isStarted) {
-            this.recognition.start();
+            try {
+              this.recognition.start();
+            } catch (error) {
+              console.error("[Speech] Error al reiniciar reconocimiento:", error);
+            }
           }
         }, 1000);
       }
@@ -77,7 +96,7 @@ export class SpeechHandler {
 
     this.recognition.onresult = async (event: any) => {
       const text = event.results[event.results.length - 1][0].transcript;
-      console.log("Speech recognized:", text);
+      console.log("[Speech] Texto reconocido:", text);
 
       try {
         const response = await fetch("/api/translate", {
@@ -93,11 +112,11 @@ export class SpeechHandler {
         });
 
         if (!response.ok) {
-          throw new Error("Translation failed");
+          throw new Error(`Error de traducción: ${response.status}`);
         }
 
         const { translated } = await response.json();
-        console.log("Translation received:", translated);
+        console.log("[Speech] Traducción recibida:", translated);
 
         // Enviar la traducción a través de WebSocket
         const message = {
@@ -106,19 +125,22 @@ export class SpeechHandler {
           from: this.language,
           translated
         };
-        console.log("Enviando traducción:", message);
-        this.ws.send(JSON.stringify(message));
+        console.log("[Speech] Enviando traducción:", message);
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify(message));
+        } else {
+          console.warn("[Speech] WebSocket no está abierto, mensaje no enviado");
+        }
       } catch (error) {
-        console.error("Translation error:", error);
+        console.error("[Speech] Error en proceso de traducción:", error);
       }
     };
 
     this.recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
+      console.error("[Speech] Error de reconocimiento:", event.error);
       if (event.error === 'no-speech') {
-        // Reiniciar el reconocimiento después de un tiempo
         if (this.isStarted) {
-          console.log("Restarting speech recognition after error");
+          console.log("[Speech] Reiniciando reconocimiento después del error");
           this.stop();
           setTimeout(() => this.start(), 1000);
         }
@@ -128,25 +150,28 @@ export class SpeechHandler {
 
   start() {
     if (this.recognition && !this.isStarted) {
-      console.log("Starting speech recognition");
+      console.log("[Speech] Iniciando reconocimiento de voz");
       this.isStarted = true;
       try {
         this.recognition.start();
       } catch (error) {
-        console.error("Error starting speech recognition:", error);
+        console.error("[Speech] Error al iniciar reconocimiento:", error);
       }
     }
   }
 
   stop() {
     if (this.recognition) {
-      console.log("Stopping speech recognition");
+      console.log("[Speech] Deteniendo reconocimiento de voz");
       this.isStarted = false;
       try {
         this.recognition.stop();
       } catch (error) {
-        console.error("Error stopping speech recognition:", error);
+        console.error("[Speech] Error al detener reconocimiento:", error);
       }
+    }
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
     }
     this.ws.close();
   }

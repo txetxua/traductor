@@ -23,13 +23,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/translate", async (req, res) => {
+    console.log("Recibida solicitud de traducción:", req.body);
     const result = translateSchema.safeParse(req.body);
     if (!result.success) {
+      console.error("Error de validación:", result.error);
       return res.status(400).json({ error: "Invalid translation request" });
     }
 
     try {
-      // Implementación temporal de traducción
       const { text, from, to } = result.data;
       let translated = text;
 
@@ -40,10 +41,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         translated = `[ES] ${text}`;
       }
 
-      console.log(`Traducción: ${text} (${from}) -> ${translated} (${to})`);
+      console.log(`Traducción realizada: ${text} (${from}) -> ${translated} (${to})`);
       res.json({ translated });
     } catch (error) {
-      console.error("Translation error:", error);
+      console.error("Error de traducción:", error);
       res.status(500).json({ error: "Translation failed" });
     }
   });
