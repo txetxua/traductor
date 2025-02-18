@@ -6,11 +6,20 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// CORS middleware for WebSocket
+// CORS middleware specifically configured for WebSocket support
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, WS'); // Added WS method
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  const origin = req.headers.origin || '*';
+
+  res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  // Handle WebSocket upgrade requests
+  if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+    res.header('Connection', 'Upgrade');
+    res.header('Upgrade', 'websocket');
+  }
 
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
@@ -19,7 +28,7 @@ app.use((req, res, next) => {
   }
 });
 
-// Logging middleware
+// Enhanced logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -30,6 +39,12 @@ app.use((req, res, next) => {
     capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
+
+  // Log request details for debugging
+  if (path.startsWith("/ws") || req.headers.upgrade) {
+    log(`WebSocket upgrade request: ${req.method} ${path}`);
+    log(`Headers: ${JSON.stringify(req.headers)}`);
+  }
 
   res.on("finish", () => {
     const duration = Date.now() - start;

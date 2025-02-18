@@ -7,7 +7,7 @@ export class WebSocketHandler {
   private messageHandlers = new Map<string, MessageHandler>();
   private isConnected = false;
   private reconnectTimer: number | null = null;
-  private maxRetries = 5;
+  private maxRetries = 3;
   private retryCount = 0;
   private retryDelay = 1000;
   private pingInterval: number | null = null;
@@ -56,7 +56,7 @@ export class WebSocketHandler {
       }
 
       const wsUrl = this.getWebSocketUrl();
-      console.log("[WebSocket] Connecting to:", wsUrl);
+      console.log("[WebSocket] Connecting to:", wsUrl, "Attempt:", this.retryCount + 1);
 
       this.ws = new WebSocket(wsUrl);
 
@@ -99,7 +99,7 @@ export class WebSocketHandler {
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log("[WebSocket] Message received:", message.type);
+          console.log("[WebSocket] Message received:", message);
 
           if (message.error) {
             console.error("[WebSocket] Server error:", message.error);
@@ -154,7 +154,7 @@ export class WebSocketHandler {
 
     try {
       const messageStr = JSON.stringify(message);
-      console.log("[WebSocket] Sending:", message.type);
+      console.log("[WebSocket] Sending:", message);
       this.ws.send(messageStr);
     } catch (error) {
       console.error("[WebSocket] Send error:", error);

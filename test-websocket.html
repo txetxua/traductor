@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Test</title>
+</head>
+<body>
+  <h1>WebSocket Test</h1>
+  <div id="status"></div>
+  <div id="messages"></div>
+
+  <script>
+    const statusDiv = document.getElementById('status');
+    const messagesDiv = document.getElementById('messages');
+
+    function log(message) {
+      const div = document.createElement('div');
+      div.textContent = `${new Date().toISOString()} - ${message}`;
+      messagesDiv.appendChild(div);
+      console.log(message);
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      
+      log(`Connecting to ${wsUrl}`);
+      statusDiv.textContent = 'Connecting...';
+      
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        log('Connected successfully');
+        statusDiv.textContent = 'Connected';
+        
+        // Send test message
+        ws.send(JSON.stringify({
+          type: 'join',
+          roomId: 'test-room'
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        log(`Received message: ${event.data}`);
+      };
+
+      ws.onerror = (error) => {
+        log(`WebSocket error: ${error}`);
+        statusDiv.textContent = 'Error';
+      };
+
+      ws.onclose = () => {
+        log('Connection closed');
+        statusDiv.textContent = 'Disconnected';
+        
+        // Try to reconnect after 5 seconds
+        setTimeout(connect, 5000);
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>

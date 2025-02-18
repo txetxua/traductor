@@ -54,6 +54,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let currentRoom: string | null = null;
     let pingInterval: NodeJS.Timeout;
 
+    // Set up ping interval
     pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.ping();
@@ -75,6 +76,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
 
+          // Leave previous room if any
           if (currentRoom) {
             const oldRoom = rooms.get(currentRoom);
             if (oldRoom) {
@@ -85,6 +87,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
+          // Join new room
           if (!rooms.has(message.roomId)) {
             rooms.set(message.roomId, new Set());
           }
@@ -95,6 +98,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
 
+          // Send joined confirmation
           ws.send(JSON.stringify({ 
             type: "joined", 
             roomId: message.roomId,
@@ -108,6 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
+        // Handle WebRTC signaling messages
         if (["offer", "answer", "ice-candidate"].includes(message.type)) {
           const roomClients = rooms.get(currentRoom);
           if (!roomClients) {
@@ -115,6 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
 
+          // Broadcast to other clients in the room
           roomClients.forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify(message));
