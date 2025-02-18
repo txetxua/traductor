@@ -4,6 +4,7 @@ export class WebRTCConnection {
   private pc!: RTCPeerConnection;
   private stream?: MediaStream;
   private pollingInterval: number | null = null;
+  private hasSentOffer = false;
 
   constructor(
     private roomId: string,
@@ -45,18 +46,46 @@ export class WebRTCConnection {
 
   private async handleSignalingMessage(message: SignalingMessage) {
     try {
+      console.log("[WebRTC] Handling signal:", message.type, "Connection state:", this.pc.signalingState);
+
       if (message.type === "offer") {
+        if (this.pc.signalingState !== "stable") {
+          console.log("[WebRTC] Ignoring offer in non-stable state");
+          return;
+        }
+
         await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+        console.log("[WebRTC] Remote description (offer) set");
+
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
+        console.log("[WebRTC] Local description (answer) set");
+
         await this.sendSignal({
           type: "answer",
           payload: answer
         });
       } else if (message.type === "answer") {
+        if (!this.hasSentOffer) {
+          console.log("[WebRTC] Ignoring answer - no offer sent");
+          return;
+        }
+
+        if (this.pc.signalingState === "stable") {
+          console.log("[WebRTC] Ignoring answer in stable state");
+          return;
+        }
+
         await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+        console.log("[WebRTC] Remote description (answer) set");
+        this.hasSentOffer = false;
       } else if (message.type === "ice-candidate" && message.payload) {
-        await this.pc.addIceCandidate(message.payload);
+        if (this.pc.remoteDescription) {
+          await this.pc.addIceCandidate(message.payload);
+          console.log("[WebRTC] ICE candidate added");
+        } else {
+          console.log("[WebRTC] Ignoring ICE candidate - no remote description");
+        }
       }
     } catch (error) {
       console.error("[WebRTC] Error handling signal:", error);
@@ -66,6 +95,10 @@ export class WebRTCConnection {
 
   private async sendSignal(message: SignalingMessage) {
     try {
+      if (message.type === "offer") {
+        this.hasSentOffer = true;
+      }
+
       const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,6 +108,8 @@ export class WebRTCConnection {
       if (!response.ok) {
         throw new Error(`Failed to send signal: ${response.status}`);
       }
+
+      console.log("[WebRTC] Signal sent:", message.type);
     } catch (error) {
       console.error("[WebRTC] Error sending signal:", error);
       this.onError(error as Error);
@@ -124,8 +159,21 @@ export class WebRTCConnection {
 
     this.pc.onnegotiationneeded = async () => {
       try {
+        if (this.hasSentOffer) {
+          console.log("[WebRTC] Negotiation needed but offer already sent");
+          return;
+        }
+
+        console.log("[WebRTC] Creating offer, signaling state:", this.pc.signalingState);
         const offer = await this.pc.createOffer();
+        if (this.pc.signalingState !== "stable") {
+          console.log("[WebRTC] Signaling state is not stable, aborting");
+          return;
+        }
+
         await this.pc.setLocalDescription(offer);
+        console.log("[WebRTC] Local description set");
+
         await this.sendSignal({
           type: "offer",
           payload: offer
