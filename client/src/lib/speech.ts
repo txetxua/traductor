@@ -64,15 +64,16 @@ export class SpeechHandler {
       const message = JSON.parse(event.data);
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;
+        console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Si somos el receptor (italiano), mostramos los mensajes originales del emisor (español)
+        // El receptor (italiano) ve los mensajes originales del emisor (español)
         if (this.language === "it" && translationMsg.from === "es") {
-          console.log("[Speech] (Receptor) Mostrando texto original del emisor:", translationMsg.text);
+          console.log("[Speech] (Receptor) Recibiendo mensaje en español:", translationMsg.text);
           this.onTranscript(translationMsg.text, false);
         }
-        // Si somos el emisor (español), mostramos las traducciones del receptor (italiano)
+        // El emisor (español) ve las traducciones de los mensajes del receptor (italiano)
         else if (this.language === "es" && translationMsg.from === "it") {
-          console.log("[Speech] (Emisor) Mostrando traducción del receptor:", translationMsg.translated);
+          console.log("[Speech] (Emisor) Recibiendo traducción del italiano:", translationMsg.translated);
           this.onTranscript(translationMsg.translated, false);
         }
       }
@@ -126,7 +127,10 @@ export class SpeechHandler {
       this.onError?.(new Error(`Error en reconocimiento de voz: ${event.error}`));
     };
 
-    this.recognition.onresult = this.onresult.bind(this);
+    this.recognition.onresult = async (event: any) => {
+      const text = event.results[event.results.length - 1][0].transcript;
+      await this.handleRecognitionResult(text);
+    };
   }
 
   private async handleRecognitionResult(text: string) {
@@ -176,11 +180,6 @@ export class SpeechHandler {
       this.onError?.(error as Error);
     }
   }
-
-  onresult = async (event: any) => {
-    const text = event.results[event.results.length - 1][0].transcript;
-    await this.handleRecognitionResult(text);
-  };
 
   start() {
     if (this.recognition && !this.isStarted) {

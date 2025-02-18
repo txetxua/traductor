@@ -7,7 +7,6 @@ export class WebRTCConnection {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout?: NodeJS.Timeout;
-  private makingOffer: boolean = false;
 
   constructor(
     private roomId: string,
@@ -65,19 +64,14 @@ export class WebRTCConnection {
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Mensaje recibido:", message.type, "Estado actual:", this.pc.signalingState);
+      console.log("[WebRTC] Mensaje recibido:", message.type);
 
       switch (message.type) {
         case "offer":
-          if (this.makingOffer) {
-            console.log("[WebRTC] Colisión de ofertas, ignorando");
-            return;
-          }
-
+          console.log("[WebRTC] Procesando oferta, estado:", this.pc.signalingState);
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
-
           this.sendSignaling({
             type: "answer",
             payload: answer
@@ -85,21 +79,21 @@ export class WebRTCConnection {
           break;
 
         case "answer":
-          if (this.pc.signalingState === "stable") {
-            console.log("[WebRTC] Ignorando respuesta en estado stable");
+          console.log("[WebRTC] Procesando respuesta, estado:", this.pc.signalingState);
+          if (this.pc.signalingState !== "have-local-offer") {
+            console.log("[WebRTC] Ignorando respuesta, estado incorrecto");
             return;
           }
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
-          try {
-            if (message.payload) {
+          if (message.payload) {
+            try {
               await this.pc.addIceCandidate(message.payload);
+            } catch (err) {
+              console.error("[WebRTC] Error al agregar candidato ICE:", err);
             }
-          } catch (err) {
-            console.error("[WebRTC] Error al agregar candidato ICE:", err);
-            throw err;
           }
           break;
       }
@@ -126,8 +120,7 @@ export class WebRTCConnection {
           username: "83c02581d3f4af5d3446bc3c",
           credential: "L8YGPMtaJJ+tNcYK",
         }
-      ],
-      iceCandidatePoolSize: 10
+      ]
     };
 
     this.pc = new RTCPeerConnection(configuration);
@@ -164,18 +157,15 @@ export class WebRTCConnection {
 
     this.pc.onnegotiationneeded = async () => {
       try {
-        this.makingOffer = true;
+        console.log("[WebRTC] Negociación necesaria");
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
-
         this.sendSignaling({
           type: "offer",
           payload: this.pc.localDescription
         });
       } catch (err) {
         console.error("[WebRTC] Error en negociación:", err);
-      } finally {
-        this.makingOffer = false;
       }
     };
   }
