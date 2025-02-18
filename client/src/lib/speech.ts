@@ -1,9 +1,9 @@
-import { type Language, type TranslationMessage } from "@shared/schema";
-import { WebSocketHandler } from "./websocket";
+import { type Language } from "@shared/schema";
+import { TranslationHandler } from "./translations";
 
 export class SpeechHandler {
   private recognition?: any;
-  private wsHandler: WebSocketHandler;
+  private translationHandler: TranslationHandler;
   private isStarted: boolean = false;
 
   constructor(
@@ -12,42 +12,21 @@ export class SpeechHandler {
     private onTranscript: (text: string, isLocal: boolean) => void,
     private onError?: (error: Error) => void
   ) {
-    console.log("[Speech] Iniciando para sala:", roomId, "idioma:", language);
+    console.log("[Speech] Starting for room:", roomId, "language:", language);
 
-    // Inicializar WebSocketHandler
-    this.wsHandler = new WebSocketHandler(roomId, onError);
+    this.translationHandler = new TranslationHandler(
+      roomId,
+      language,
+      onTranscript,
+      onError
+    );
 
-    // Configurar manejadores de mensajes
-    this.wsHandler.onMessage("error", (message) => {
-      console.error("[Speech] Error del servidor:", message.error);
-      this.onError?.(new Error(message.error));
-    });
-
-    this.wsHandler.onMessage("joined", (message) => {
-      console.log("[Speech] Unido a sala:", message.roomId);
-    });
-
-    this.wsHandler.onMessage("translation", (message) => {
-      const translationMsg = message as TranslationMessage;
-      console.log("[Speech] Traducción recibida:", translationMsg);
-
-      // Solo mostrar traducciones de otros participantes
-      if (translationMsg.from !== this.language) {
-        console.log("[Speech] Mostrando traducción:", translationMsg.translated);
-        this.onTranscript(translationMsg.translated, false);
-      } else {
-        console.log("[Speech] Ignorando traducción local");
-      }
-    });
-
-    // Iniciar conexión y reconocimiento
-    this.wsHandler.connect();
     this.setupRecognition();
   }
 
   private setupRecognition() {
     if (!("webkitSpeechRecognition" in window)) {
-      this.onError?.(new Error("Reconocimiento de voz no soportado"));
+      this.onError?.(new Error("Speech recognition not supported"));
       return;
     }
 
@@ -63,77 +42,46 @@ export class SpeechHandler {
       this.recognition.lang = langMap[this.language];
 
       this.recognition.onstart = () => {
-        console.log("[Speech] Reconocimiento iniciado");
+        console.log("[Speech] Recognition started");
         this.isStarted = true;
       };
 
       this.recognition.onend = () => {
-        console.log("[Speech] Reconocimiento terminado");
+        console.log("[Speech] Recognition ended");
         if (this.isStarted) {
-          console.log("[Speech] Reiniciando reconocimiento");
+          console.log("[Speech] Restarting recognition");
           try {
             this.recognition.start();
           } catch (error) {
-            console.error("[Speech] Error reiniciando reconocimiento:", error);
+            console.error("[Speech] Error restarting recognition:", error);
           }
         }
       };
 
       this.recognition.onerror = (event: any) => {
         if (event.error === 'no-speech') return;
-        console.error("[Speech] Error de reconocimiento:", event.error);
-        this.onError?.(new Error(`Error en reconocimiento de voz: ${event.error}`));
+        console.error("[Speech] Recognition error:", event.error);
+        this.onError?.(new Error(`Speech recognition error: ${event.error}`));
       };
 
       this.recognition.onresult = async (event: any) => {
         try {
           const text = event.results[event.results.length - 1][0].transcript;
-          console.log("[Speech] Texto reconocido:", text);
+          console.log("[Speech] Text recognized:", text);
 
           if (!text.trim()) {
-            console.log("[Speech] Texto vacío, ignorando");
+            console.log("[Speech] Empty text, ignoring");
             return;
           }
 
-          // Obtener traducción
-          const response = await fetch("/api/translate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text,
-              from: this.language,
-              to: this.language === "es" ? "it" : "es"
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`Error de traducción: ${response.status}`);
-          }
-
-          const { translated } = await response.json();
-          console.log(`[Speech] Texto traducido: "${text}" -> "${translated}"`);
-
-          // Enviar traducción por WebSocket
-          if (this.wsHandler.isOpen()) {
-            const message: TranslationMessage = {
-              type: "translation",
-              text,
-              from: this.language,
-              translated
-            };
-            console.log("[Speech] Enviando traducción:", message);
-            this.wsHandler.send(message);
-          } else {
-            console.error("[Speech] WebSocket no está listo");
-            this.wsHandler.connect();
-          }
+          await this.translationHandler.translate(text);
         } catch (error) {
           console.error("[Speech] Error:", error);
           this.onError?.(error as Error);
         }
       };
     } catch (error) {
-      console.error("[Speech] Error configurando reconocimiento:", error);
+      console.error("[Speech] Error setting up recognition:", error);
       this.onError?.(error as Error);
     }
   }
@@ -143,7 +91,7 @@ export class SpeechHandler {
       try {
         this.recognition.start();
       } catch (error) {
-        console.error("[Speech] Error iniciando:", error);
+        console.error("[Speech] Error starting:", error);
         this.onError?.(error as Error);
       }
     }
@@ -156,10 +104,10 @@ export class SpeechHandler {
       try {
         this.recognition.stop();
       } catch (error) {
-        console.error("[Speech] Error deteniendo:", error);
+        console.error("[Speech] Error stopping:", error);
       }
     }
 
-    this.wsHandler.close();
+    this.translationHandler.stop();
   }
 }

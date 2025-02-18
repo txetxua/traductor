@@ -1,4 +1,4 @@
-import { type Language, type TranslationMessage } from "@shared/schema";
+import { type Language } from "@shared/schema";
 
 type MessageHandler = (message: any) => void;
 
@@ -6,67 +6,74 @@ export class WebSocketHandler {
   private ws: WebSocket | null = null;
   private messageHandlers: Map<string, MessageHandler> = new Map();
   private isConnected: boolean = false;
-  private heartbeatInterval?: NodeJS.Timeout;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
 
   constructor(
     private roomId: string,
     private onError?: (error: Error) => void
   ) {
-    console.log("[WebSocket] Iniciando para sala:", roomId);
+    console.log("[WebSocket] Starting for room:", roomId);
   }
 
   private getWebSocketUrl() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const baseUrl = window.location.host;
-    return `${protocol}//${baseUrl}/ws`;
+    return `${protocol}//${window.location.host}/ws`;
   }
 
   public connect() {
     try {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        console.log("[WebSocket] Conexión ya activa");
+        console.log("[WebSocket] Connection already active");
         return;
       }
 
+      // Clean up any existing connection
+      if (this.ws) {
+        this.ws.close();
+        this.ws = null;
+      }
+
       const wsUrl = this.getWebSocketUrl();
-      console.log("[WebSocket] Iniciando conexión:", wsUrl);
+      console.log("[WebSocket] Connecting to:", wsUrl);
 
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log("[WebSocket] Conectado exitosamente");
+        console.log("[WebSocket] Connected successfully");
         this.isConnected = true;
-        this.startHeartbeat();
 
-        // Unirse a la sala
+        // Join the room
         this.send({ type: "join", roomId: this.roomId });
       };
 
       this.ws.onclose = () => {
-        console.log("[WebSocket] Conexión cerrada");
+        console.log("[WebSocket] Connection closed");
         this.isConnected = false;
-        this.stopHeartbeat();
 
-        // Un solo intento de reconexión después de 2 segundos
-        setTimeout(() => {
-          if (!this.isConnected) {
-            this.connect();
-          }
-        }, 2000);
+        // Simple reconnection after 2 seconds
+        if (!this.reconnectTimeout) {
+          this.reconnectTimeout = setTimeout(() => {
+            this.reconnectTimeout = null;
+            if (!this.isConnected) {
+              console.log("[WebSocket] Attempting to reconnect...");
+              this.connect();
+            }
+          }, 2000);
+        }
       };
 
       this.ws.onerror = (event) => {
-        console.error("[WebSocket] Error en la conexión:", event);
-        this.onError?.(new Error("Error en la conexión WebSocket"));
+        console.error("[WebSocket] Connection error:", event);
+        this.onError?.(new Error("WebSocket connection error"));
       };
 
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log("[WebSocket] Mensaje recibido:", message);
+          console.log("[WebSocket] Message received:", message);
 
           if (message.error) {
-            console.error("[WebSocket] Error del servidor:", message.error);
+            console.error("[WebSocket] Server error:", message.error);
             this.onError?.(new Error(message.error));
             return;
           }
@@ -76,45 +83,29 @@ export class WebSocketHandler {
             handler(message);
           }
         } catch (error) {
-          console.error("[WebSocket] Error procesando mensaje:", error);
+          console.error("[WebSocket] Error processing message:", error);
           this.onError?.(error as Error);
         }
       };
 
     } catch (error) {
-      console.error("[WebSocket] Error inicializando conexión:", error);
+      console.error("[WebSocket] Error initializing connection:", error);
       this.onError?.(error as Error);
-    }
-  }
-
-
-  private startHeartbeat() {
-    this.stopHeartbeat();
-    this.heartbeatInterval = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.send({ type: "heartbeat" });
-      }
-    }, 30000);
-  }
-
-  private stopHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = undefined;
     }
   }
 
   public send(message: any) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error("[WebSocket] No se puede enviar mensaje, conexión no está abierta");
+      console.error("[WebSocket] Cannot send message, connection not open");
       return;
     }
 
     try {
       const messageStr = JSON.stringify(message);
+      console.log("[WebSocket] Sending message:", message);
       this.ws.send(messageStr);
     } catch (error) {
-      console.error("[WebSocket] Error enviando mensaje:", error);
+      console.error("[WebSocket] Error sending message:", error);
       this.onError?.(error as Error);
     }
   }
@@ -128,15 +119,19 @@ export class WebSocketHandler {
   }
 
   public close() {
-    console.log("[WebSocket] Cerrando conexión");
+    console.log("[WebSocket] Closing connection");
     this.isConnected = false;
-    this.stopHeartbeat();
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {
         this.ws.close();
       } catch (error) {
-        console.error("[WebSocket] Error cerrando conexión:", error);
+        console.error("[WebSocket] Error closing connection:", error);
       }
     }
     this.ws = null;

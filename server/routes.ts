@@ -5,24 +5,13 @@ import { callStorage } from "./storage";
 import { z } from "zod";
 import { insertCallSchema, type SignalingMessage, type TranslationMessage } from "@shared/schema";
 
-// Schemas para validación de mensajes
-const messageSchema = z.object({
-  type: z.enum(["heartbeat", "join", "translation", "offer", "answer", "ice-candidate"]),
-  roomId: z.string().optional(),
-  text: z.string().optional(),
-  from: z.enum(["es", "it"]).optional(),
-  translated: z.string().optional(),
-  payload: z.any().optional()
-});
-
-// Schema para traducción
+// Translation schemas and dictionaries remain unchanged
 const translateSchema = z.object({
   text: z.string(),
   from: z.enum(["es", "it"]),
   to: z.enum(["es", "it"])
 });
 
-// Diccionario simple de traducciones
 const translations = {
   "es": {
     "hola": "ciao",
@@ -44,7 +33,6 @@ const translations = {
   }
 } as const;
 
-// Función simple de traducción
 const translateText = (text: string, from: string, to: string): string => {
   if (from === to) return text;
   const phrases = text.toLowerCase().split(/[.!?]+/).filter(Boolean);
@@ -57,6 +45,59 @@ const translateText = (text: string, from: string, to: string): string => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Map to store SSE clients for each room
+  const sseClients = new Map<string, Set<{
+    send: (data: string) => void;
+    language: string;
+  }>>();
+
+  // SSE endpoint for translations
+  app.get("/api/translations/stream/:roomId", (req, res) => {
+    const roomId = req.params.roomId;
+    const language = req.query.language as string;
+
+    if (!roomId || !language || !["es", "it"].includes(language)) {
+      res.status(400).json({ error: "Invalid room ID or language" });
+      return;
+    }
+
+    console.log(`[SSE] New client connected to room ${roomId} with language ${language}`);
+
+    // Set headers for SSE
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive"
+    });
+
+    // Create client handler
+    const client = {
+      send: (data: string) => {
+        res.write(`data: ${data}\n\n`);
+      },
+      language
+    };
+
+    // Add client to room
+    if (!sseClients.has(roomId)) {
+      sseClients.set(roomId, new Set());
+    }
+    sseClients.get(roomId)!.add(client);
+
+    // Send initial connection confirmation
+    client.send(JSON.stringify({ type: "connected" }));
+
+    // Handle client disconnect
+    req.on("close", () => {
+      console.log(`[SSE] Client disconnected from room ${roomId}`);
+      sseClients.get(roomId)?.delete(client);
+      if (sseClients.get(roomId)?.size === 0) {
+        sseClients.delete(roomId);
+      }
+    });
+  });
+
+  // Translation endpoint now broadcasts to SSE clients
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
     const result = translateSchema.safeParse(req.body);
@@ -69,6 +110,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { text, from, to } = result.data;
       const translated = translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
+
+      // Broadcast translation to all SSE clients in the room
+      const roomClients = sseClients.get(req.body.roomId);
+      if (roomClients) {
+        const message = JSON.stringify({
+          type: "translation",
+          text,
+          translated,
+          from,
+          to
+        });
+
+        roomClients.forEach(client => {
+          // Only send to clients with the target language
+          if (client.language === to) {
+            client.send(message);
+          }
+        });
+      }
+
       res.json({ translated });
     } catch (error) {
       console.error("[Translate] Error:", error);
@@ -77,81 +138,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-  const rooms = new Map<string, Set<WebSocket>>();
 
-  // Configuración del servidor WebSocket
+  // Simplified WebSocket server setup for signaling only
   const wss = new WebSocketServer({
     server: httpServer,
-    path: "/ws",
-    perMessageDeflate: false
+    path: "/ws"
   });
 
-  console.log("[WebSocket] Servidor inicializado en /ws");
+  console.log("[WebSocket] Server initialized on /ws");
 
-  wss.on("connection", (ws, req) => {
-    console.log("[WebSocket] Nueva conexión entrante");
+  const rooms = new Map<string, Set<WebSocket>>();
+
+  wss.on("connection", (ws) => {
+    console.log("[WebSocket] New connection");
     let currentRoom: string | null = null;
 
-    ws.on("message", async (data) => {
+    ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Mensaje recibido:", message);
+        console.log("[WebSocket] Message received:", message);
 
-        // Validar formato del mensaje
-        const result = messageSchema.safeParse(message);
-        if (!result.success) {
-          console.error("[WebSocket] Error de validación:", result.error);
-          ws.send(JSON.stringify({ type: "error", error: "Formato de mensaje inválido" }));
-          return;
-        }
-
-        // Procesar mensaje según su tipo
         if (message.type === "join" && message.roomId) {
           currentRoom = message.roomId;
-
           if (!rooms.has(currentRoom)) {
             rooms.set(currentRoom, new Set());
           }
           rooms.get(currentRoom)!.add(ws);
-
-          console.log(`[WebSocket] Cliente unido a sala ${currentRoom}. Total clientes: ${rooms.get(currentRoom)!.size}`);
+          console.log(`[WebSocket] Client joined room ${currentRoom}`);
           ws.send(JSON.stringify({ type: "joined", roomId: currentRoom }));
           return;
         }
 
-        // Para otros tipos de mensajes, verificar que el cliente esté en una sala
-        if (!currentRoom || !rooms.has(currentRoom)) {
-          ws.send(JSON.stringify({ type: "error", error: "No está en una sala" }));
+        // Only handle signaling messages if client is in a room
+        if (!currentRoom) {
+          ws.send(JSON.stringify({ type: "error", error: "Not in a room" }));
           return;
         }
 
-        // Transmitir mensaje a otros clientes en la misma sala
-        const clientsInRoom = rooms.get(currentRoom)!;
-        clientsInRoom.forEach(client => {
-          if (client !== ws && client.readyState === WebSocket.OPEN) {
-            client.send(data.toString());
-          }
-        });
-
+        // Forward signaling messages to other clients in the room
+        if (["offer", "answer", "ice-candidate"].includes(message.type)) {
+          rooms.get(currentRoom)!.forEach(client => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(data.toString());
+            }
+          });
+        }
       } catch (error) {
-        console.error("[WebSocket] Error procesando mensaje:", error);
-        ws.send(JSON.stringify({ type: "error", error: "Error en el formato del mensaje" }));
+        console.error("[WebSocket] Error processing message:", error);
+        ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
       }
     });
 
     ws.on("close", () => {
-      if (currentRoom && rooms.has(currentRoom)) {
-        rooms.get(currentRoom)!.delete(ws);
-        console.log(`[WebSocket] Cliente dejó sala ${currentRoom}. Clientes restantes: ${rooms.get(currentRoom)!.size}`);
-
-        if (rooms.get(currentRoom)!.size === 0) {
+      if (currentRoom) {
+        rooms.get(currentRoom)?.delete(ws);
+        if (rooms.get(currentRoom)?.size === 0) {
           rooms.delete(currentRoom);
         }
       }
-    });
-
-    ws.on("error", (error) => {
-      console.error("[WebSocket] Error en la conexión:", error);
     });
   });
 
