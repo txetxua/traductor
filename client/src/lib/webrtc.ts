@@ -4,9 +4,6 @@ export class WebRTCConnection {
   private pc!: RTCPeerConnection;
   private stream?: MediaStream;
   private ws!: WebSocket;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectTimeout?: NodeJS.Timeout;
 
   constructor(
     private roomId: string,
@@ -26,27 +23,18 @@ export class WebRTCConnection {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log("[WebRTC] WebSocket conectado, uniéndose a sala:", this.roomId);
+      console.log("[WebRTC] WebSocket conectado");
       this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
-      this.reconnectAttempts = 0;
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-      }
     };
 
     this.ws.onclose = () => {
-      console.log("[WebRTC] Conexión WebSocket cerrada");
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        console.log(`[WebRTC] Intentando reconectar (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-        this.reconnectTimeout = setTimeout(() => this.initializeWebSocket(), 2000);
-      } else {
-        this.onError(new Error("No se pudo mantener la conexión con el servidor"));
-      }
+      console.log("[WebRTC] WebSocket cerrado");
+      this.onError(new Error("La conexión con el servidor se ha perdido"));
     };
 
     this.ws.onerror = (error) => {
       console.error("[WebRTC] Error en WebSocket:", error);
+      this.onError(new Error("Error en la conexión con el servidor"));
     };
 
     this.ws.onmessage = this.handleWebSocketMessage.bind(this);
@@ -74,16 +62,14 @@ export class WebRTCConnection {
           username: "83c02581d3f4af5d3446bc3c",
           credential: "L8YGPMtaJJ+tNcYK",
         }
-      ],
-      iceTransportPolicy: "all",
-      iceCandidatePoolSize: 10
+      ]
     };
 
     this.pc = new RTCPeerConnection(configuration);
 
     this.pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
-        console.log("[WebRTC] Nuevo candidato ICE:", candidate);
+        console.log("[WebRTC] Nuevo candidato ICE");
         this.sendSignaling({
           type: "ice-candidate",
           payload: candidate
@@ -91,57 +77,28 @@ export class WebRTCConnection {
       }
     };
 
-    this.pc.oniceconnectionstatechange = () => {
-      const state = this.pc.iceConnectionState;
-      console.log("[WebRTC] Estado de conexión ICE cambiado a:", state);
-
-      if (state === 'connected') {
-        console.log("[WebRTC] Conexión ICE establecida exitosamente");
-        this.onConnectionStateChange('connected');
-      } else if (state === 'failed') {
-        console.error("[WebRTC] Conexión ICE fallida");
-        this.pc.restartIce();
-      } else if (state === 'disconnected') {
-        console.log("[WebRTC] ICE desconectado, intentando reconectar...");
-        this.pc.restartIce();
-      }
-    };
-
     this.pc.ontrack = (event) => {
       console.log("[WebRTC] Track remoto recibido:", event.track.kind);
       const [remoteStream] = event.streams;
       if (remoteStream) {
-        console.log("[WebRTC] Configurando stream remoto");
         this.onRemoteStream(remoteStream);
       }
     };
 
     this.pc.onconnectionstatechange = () => {
       const state = this.pc.connectionState;
-      console.log("[WebRTC] Estado de conexión cambiado a:", state);
+      console.log("[WebRTC] Estado de conexión:", state);
       this.onConnectionStateChange(state);
-
-      if (state === 'connected') {
-        console.log("[WebRTC] Conexión establecida exitosamente");
-        this.reconnectAttempts = 0;
-      } else if (state === 'failed') {
-        console.error("[WebRTC] Conexión fallida");
-        this.restartConnection();
-      } else if (state === 'disconnected') {
-        console.log("[WebRTC] Conexión desconectada, intentando reconectar...");
-        this.restartConnection();
-      }
     };
   }
 
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Mensaje WebSocket recibido:", message.type);
+      console.log("[WebRTC] Mensaje recibido:", message.type);
 
       switch (message.type) {
         case "offer":
-          console.log("[WebRTC] Procesando oferta");
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
@@ -152,73 +109,44 @@ export class WebRTCConnection {
           break;
 
         case "answer":
-          console.log("[WebRTC] Procesando respuesta");
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
-          console.log("[WebRTC] Procesando candidato ICE");
           if (this.pc.remoteDescription) {
             await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
           }
           break;
       }
     } catch (err) {
-      console.error("[WebRTC] Error procesando mensaje WebSocket:", err);
+      console.error("[WebRTC] Error procesando mensaje:", err);
       this.onError(err as Error);
-    }
-  }
-
-  private async restartConnection() {
-    console.log("[WebRTC] Reiniciando conexión");
-    try {
-      const offer = await this.pc.createOffer({ iceRestart: true });
-      await this.pc.setLocalDescription(offer);
-      this.sendSignaling({
-        type: "offer",
-        payload: offer
-      });
-    } catch (error) {
-      console.error("[WebRTC] Error al reiniciar conexión:", error);
-      this.onError(error as Error);
     }
   }
 
   async start(videoEnabled: boolean) {
     try {
-      console.log("[WebRTC] Iniciando conexión con video:", videoEnabled);
+      console.log("[WebRTC] Iniciando con video:", videoEnabled);
 
       const constraints: MediaStreamConstraints = {
-        video: videoEnabled ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } : false,
+        video: videoEnabled,
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+          noiseSuppression: true
         }
       };
 
-      console.log("[WebRTC] Solicitando acceso a medios con restricciones:", constraints);
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-
-      console.log("[WebRTC] Acceso a medios concedido:", {
-        video: this.stream.getVideoTracks().length > 0,
-        audio: this.stream.getAudioTracks().length > 0
-      });
+      console.log("[WebRTC] Stream local obtenido");
 
       this.stream.getTracks().forEach(track => {
-        console.log("[WebRTC] Añadiendo track a conexión peer:", track.kind);
         if (this.stream) {
           this.pc.addTrack(track, this.stream);
         }
       });
 
-      console.log("[WebRTC] Creando y enviando oferta");
       const offer = await this.pc.createOffer();
       await this.pc.setLocalDescription(offer);
-
       this.sendSignaling({
         type: "offer",
         payload: offer
@@ -234,22 +162,13 @@ export class WebRTCConnection {
 
   private sendSignaling(message: SignalingMessage) {
     if (this.ws.readyState === WebSocket.OPEN) {
-      console.log("[WebRTC] Enviando mensaje de señalización:", message.type);
       this.ws.send(JSON.stringify(message));
-    } else {
-      console.warn("[WebRTC] WebSocket no está abierto, mensaje no enviado:", message.type);
     }
   }
 
   close() {
     console.log("[WebRTC] Cerrando conexión");
-    this.stream?.getTracks().forEach(track => {
-      console.log("[WebRTC] Deteniendo track:", track.kind);
-      track.stop();
-    });
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-    }
+    this.stream?.getTracks().forEach(track => track.stop());
     this.pc.close();
     this.ws.close();
   }
