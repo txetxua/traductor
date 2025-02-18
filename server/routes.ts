@@ -221,6 +221,13 @@ const translateText = (text: string, from: string, to: string) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+  });
+
   app.post("/api/calls", async (req, res) => {
     const result = insertCallSchema.safeParse(req.body);
     if (!result.success) {
@@ -284,12 +291,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const clientsInRoom = rooms.get(currentRoom)!;
           console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
-
-          if (message.type === "translation") {
-            // Para mensajes de traducción, asegurarse de que el receptor reciba la traducción
-            const translationMsg = message as TranslationMessage;
-            console.log(`[WebSocket] Mensaje de traducción: ${translationMsg.text} -> ${translationMsg.translated}`);
-          }
 
           for (const client of clientsInRoom) {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
