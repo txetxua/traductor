@@ -49,7 +49,7 @@ export class SpeechHandler {
       return;
     }
 
-    this.recognition = new window.webkitSpeechRecognition();
+    this.recognition = new (window as any).webkitSpeechRecognition();
     this.recognition.continuous = true;
     this.recognition.interimResults = false;
 
