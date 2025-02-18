@@ -12,7 +12,6 @@ const translateSchema = z.object({
   to: z.enum(["es", "it"])
 });
 
-// Common translations dictionary
 const translations = {
   "es": {
     "hola": "ciao",
@@ -48,7 +47,7 @@ const translations = {
     "più lentamente": "más despacio",
     "capisco": "entiendo"
   }
-};
+} as const;
 
 // Simple translation function
 const translateText = (text: string, from: string, to: string): string => {
@@ -57,7 +56,8 @@ const translateText = (text: string, from: string, to: string): string => {
   const phrases = text.toLowerCase().split(/[.!?]+/).filter(Boolean);
   const translatedPhrases = phrases.map(phrase => {
     const trimmedPhrase = phrase.trim();
-    return translations[from as keyof typeof translations][trimmedPhrase] || trimmedPhrase;
+    const dict = from === "es" ? translations.es : translations.it;
+    return dict[trimmedPhrase as keyof typeof dict] || trimmedPhrase;
   });
 
   return translatedPhrases.join(". ").trim();
@@ -66,7 +66,6 @@ const translateText = (text: string, from: string, to: string): string => {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Configure CORS for both HTTP and WebSocket
   app.use((req, res, next) => {
-    const origin = req.headers.origin || '*';
     console.log("[Server] Incoming request:", {
       method: req.method,
       path: req.path,
@@ -75,32 +74,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       host: req.headers.host
     });
 
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.header('Access-Control-Allow-Credentials', 'true');
-
+    // Allow all origins for WebSocket connections
     if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-      console.log("[Server] Detected WebSocket upgrade request");
-      res.header('Access-Control-Allow-Headers', 'Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version, Sec-WebSocket-Extensions');
-      res.header('Access-Control-Allow-Origin', '*');
-    }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept, Origin, Authorization, Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version, Sec-WebSocket-Extensions');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    if (req.method === 'OPTIONS') {
-      console.log("[Server] Handling OPTIONS request");
-      return res.status(200).end();
+      if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+      }
+    } else {
+      // Regular HTTP requests
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+      if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+      }
     }
 
     next();
-  });
-
-  app.post("/api/calls", async (req, res) => {
-    const result = insertCallSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ error: "Invalid call data" });
-    }
-    const call = await callStorage.createCall(result.data);
-    res.json(call);
   });
 
   app.post("/api/translate", async (req, res) => {
@@ -125,53 +121,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create HTTP server
   const httpServer = createServer(app);
 
-  // WebSocket server setup with improved error handling and new path
+  // WebSocket server setup
   const wss = new WebSocketServer({
     server: httpServer,
-    path: "/socket", // Changed from /ws to /socket
+    path: "/socket",
     perMessageDeflate: false,
-    clientTracking: true,
-    handleProtocols: (protocols) => {
-      console.log("[WebSocket] Protocols requested:", protocols);
-      return protocols ? protocols[0] : '';
-    }
+    clientTracking: true
   });
 
-  console.log("[WebSocket] Server initialized with path: /socket");
+  console.log("[WebSocket] Server inicializado en /socket");
 
-  // Track rooms and their clients
   const rooms = new Map<string, Set<WebSocket>>();
 
-  // WebSocket server events
   wss.on("connection", (ws, req) => {
     console.log("[WebSocket] Nueva conexión entrante:", {
       address: req.socket.remoteAddress,
-      headers: {
-        upgrade: req.headers.upgrade,
-        connection: req.headers.connection,
-        host: req.headers.host,
-        origin: req.headers.origin
-      }
+      url: req.url,
+      origin: req.headers.origin,
+      host: req.headers.host
     });
-    let currentRoom: string | null = null;
 
-    // Set up ping-pong with shorter interval for faster connection status detection
-    const pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.ping();
-        } catch (error) {
-          console.error("[WebSocket] Error en ping:", error);
-          clearInterval(pingInterval);
-          ws.terminate();
-        }
+    let currentRoom: string | null = null;
+    let lastHeartbeat = Date.now();
+
+    const heartbeatCheck = setInterval(() => {
+      const now = Date.now();
+      if (now - lastHeartbeat > 60000) { // 60 segundos sin heartbeat
+        console.log("[WebSocket] Cliente inactivo, cerrando conexión");
+        ws.terminate();
+        clearInterval(heartbeatCheck);
       }
-    }, 15000);
+    }, 30000);
 
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
         console.log("[WebSocket] Mensaje recibido:", message.type);
+
+        if (message.type === "heartbeat") {
+          lastHeartbeat = Date.now();
+          return;
+        }
 
         if (message.type === "join") {
           const roomId = message.roomId;
@@ -179,97 +169,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!rooms.has(roomId)) {
             rooms.set(roomId, new Set());
-            console.log(`[WebSocket] Nueva sala creada: ${roomId}`);
           }
 
           rooms.get(roomId)!.add(ws);
           console.log(`[WebSocket] Cliente unido a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
 
-          // Send acknowledgment
           ws.send(JSON.stringify({ type: "joined", roomId }));
+          return;
+        }
 
-        } else if (!currentRoom || !rooms.has(currentRoom)) {
-          console.warn("[WebSocket] Cliente no está en ninguna sala");
+        if (!currentRoom || !rooms.has(currentRoom)) {
+          console.log("[WebSocket] Cliente intentó enviar mensaje sin estar en una sala");
           ws.send(JSON.stringify({ type: "error", error: "No está en una sala" }));
           return;
-        } else if (message.type === "translation") {
-          const translationMsg = message as TranslationMessage;
-          const clientsInRoom = rooms.get(currentRoom)!;
-
-          console.log(`[WebSocket] Procesando traducción en sala ${currentRoom}:`, {
-            from: translationMsg.from,
-            text: translationMsg.text,
-            translated: translationMsg.translated,
-            recipients: clientsInRoom.size - 1
-          });
-
-          // Broadcast to other clients in the room
-          clientsInRoom.forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              try {
-                client.send(JSON.stringify(translationMsg));
-              } catch (error) {
-                console.error("[WebSocket] Error enviando traducción:", error);
-              }
-            }
-          });
-        } else if (message.type === "offer" || message.type === "answer" || message.type === "ice-candidate") {
-          const signalMsg = message as SignalingMessage;
-          const clientsInRoom = rooms.get(currentRoom)!;
-
-          console.log(`[WebSocket] Broadcasting ${signalMsg.type} in room ${currentRoom}`);
-
-          clientsInRoom.forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              try {
-                client.send(data.toString());
-              } catch (error) {
-                console.error("[WebSocket] Error sending signal:", error);
-              }
-            }
-          });
         }
+
+        // Broadcast message to other clients in the room
+        const clientsInRoom = rooms.get(currentRoom)!;
+        clientsInRoom.forEach(client => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            try {
+              client.send(data.toString());
+            } catch (error) {
+              console.error("[WebSocket] Error enviando mensaje:", error);
+            }
+          }
+        });
+
       } catch (error) {
         console.error("[WebSocket] Error procesando mensaje:", error);
-        ws.send(JSON.stringify({ type: "error", error: "Formato de mensaje inválido" }));
+        ws.send(JSON.stringify({ type: "error", error: "Error en el formato del mensaje" }));
       }
     });
 
     ws.on("close", () => {
-      clearInterval(pingInterval);
-
+      clearInterval(heartbeatCheck);
       if (currentRoom && rooms.has(currentRoom)) {
         rooms.get(currentRoom)!.delete(ws);
         console.log(`[WebSocket] Cliente dejó sala ${currentRoom}. Clientes restantes: ${rooms.get(currentRoom)!.size}`);
 
         if (rooms.get(currentRoom)!.size === 0) {
           rooms.delete(currentRoom);
-          console.log(`[WebSocket] Sala ${currentRoom} eliminada (vacía)`);
         }
       }
     });
 
     ws.on("error", (error) => {
-      console.error("[WebSocket] Error:", error);
-    });
-
-    ws.on("pong", () => {
-      // Connection is alive
-      console.debug("[WebSocket] Pong recibido del cliente");
+      console.error("[WebSocket] Error en la conexión:", error);
     });
   });
 
-  // Handle WebSocket server errors
   wss.on("error", (error) => {
-    console.error("[WebSocket Server] Error:", {
-      error,
-      message: error.message,
-      stack: error.stack
-    });
-  });
-
-  wss.on("listening", () => {
-    console.log("[WebSocket] Server is listening");
+    console.error("[WebSocket] Error en el servidor:", error);
   });
 
   return httpServer;
