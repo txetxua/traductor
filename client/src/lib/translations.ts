@@ -52,12 +52,14 @@ export class TranslationHandler {
           console.log("[Translations] Message received:", message);
 
           if (message.type === "translation") {
-            // Solo mostrar la traducción si está destinada a nuestro idioma
-            if (message.to === this.language) {
-              console.log("[Translations] Showing translation in", this.language, ":", message.translated);
+            if (message.from === this.language) {
+              // Mostrar el texto original para el emisor
+              console.log("[Translations] Showing original text in", this.language, ":", message.text);
+              this.onTranslation(message.text, true);
+            } else if (message.to === this.language) {
+              // Mostrar el texto traducido para el receptor
+              console.log("[Translations] Showing translated text in", this.language, ":", message.translated);
               this.onTranslation(message.translated, false);
-            } else {
-              console.log("[Translations] Ignoring translation for different language:", message.to);
             }
           }
         } catch (error) {
@@ -102,7 +104,7 @@ export class TranslationHandler {
       const baseUrl = this.getApiBaseUrl();
       console.log("[Translations] Original text:", text, "in language:", this.language);
 
-      // Mostrar el texto original localmente
+      // Mostrar el texto original inmediatamente para el emisor
       this.onTranslation(text, true);
 
       // Determinar el idioma de destino (opuesto al idioma actual)

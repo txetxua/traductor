@@ -4,11 +4,11 @@ import { WebSocketServer, WebSocket } from "ws";
 import { callStorage } from "./storage";
 import { z } from "zod";
 import { 
-  insertCallSchema, 
   type WebSocketMessage, 
   type SignalingMessage, 
   type TranslationMessage 
 } from "@shared/schema";
+import { translateText } from "./translation-service";
 
 const translateSchema = z.object({
   text: z.string(),
@@ -17,41 +17,6 @@ const translateSchema = z.object({
   roomId: z.string()
 });
 
-// Diccionario de traducciones básicas
-const translations = {
-  "es": {
-    "hola": "ciao",
-    "buenos días": "buongiorno",
-    "gracias": "gracias",
-    "por favor": "per favore",
-    "sí": "sì",
-    "no": "no",
-    "adiós": "arrivederci"
-  },
-  "it": {
-    "ciao": "hola",
-    "buongiorno": "buenos días",
-    "grazie": "gracias",
-    "per favore": "por favor",
-    "sì": "sí",
-    "no": "no",
-    "arrivederci": "adiós"
-  }
-} as const;
-
-const translateText = (text: string, from: string, to: string): string => {
-  if (from === to) return text;
-
-  // Traducir palabra por palabra usando el diccionario
-  const words = text.toLowerCase().split(/\s+/);
-  const translatedWords = words.map(word => {
-    const dict = from === "es" ? translations.es : translations.it;
-    return dict[word as keyof typeof dict] || word;
-  });
-
-  return translatedWords.join(" ");
-};
-
 export async function registerRoutes(app: Express): Promise<Server> {
   const sseClients = new Map<string, Set<{
     res: any;
@@ -59,32 +24,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     keepAliveInterval?: NodeJS.Timeout;
   }>>();
 
-  // Configurar servidor HTTP
   const httpServer = createServer(app);
 
-  // Configurar WebSocket Server con opciones específicas
   const wss = new WebSocketServer({ 
     server: httpServer,
     path: '/ws',
-    perMessageDeflate: false,
-    handleProtocols: (protocols, request) => {
-      console.log("[WebSocket] Client requested protocols:", protocols);
-      return protocols?.includes('translation-protocol') ? 'translation-protocol' : false;
-    },
-    verifyClient: (info, callback) => {
-      // Verificar que la conexión viene con los headers necesarios
-      const protocol = info.req.headers['sec-websocket-protocol'];
-      console.log("[WebSocket] Client headers:", info.req.headers);
-      console.log("[WebSocket] Protocol received:", protocol);
-
-      if (!protocol || !protocol.includes('translation-protocol')) {
-        console.log("[WebSocket] Protocol verification failed");
-        callback(false, 400, 'Protocol not supported');
-        return;
-      }
-      console.log("[WebSocket] Protocol verification successful");
-      callback(true);
-    }
+    perMessageDeflate: false
   });
 
   console.log("[WebSocket] Server initialized on /ws");
@@ -119,9 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const client = { res, language, keepAliveInterval };
     sseClients.get(roomId)!.add(client);
 
-    // Enviar mensaje inicial de conexión
-    const initialMessage = JSON.stringify({ type: "connected" });
-    res.write(`data: ${initialMessage}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
 
     req.on("close", () => {
       console.log(`[SSE] Client disconnected from room ${roomId}`);
@@ -136,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Endpoint de traducción
+  // Endpoint de traducción usando OpenAI
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
     try {
@@ -149,11 +92,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { text, from, to, roomId } = result.data;
       console.log(`[Translate] Processing translation from ${from} to ${to} in room ${roomId}`);
 
-      // Realizar la traducción
-      const translated = translateText(text, from, to);
+      // Usar el nuevo servicio de traducción
+      const translated = await translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
-      // Buscar clientes en la sala
       const roomClients = sseClients.get(roomId);
       console.log(`[Translate] Room ${roomId} has ${roomClients?.size || 0} clients`);
 
@@ -168,7 +110,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         let sentToSomeone = false;
         roomClients.forEach(client => {
-          // Solo enviar la traducción a los clientes que hablan el idioma de destino
           if (client.language === to) {
             try {
               console.log(`[Translate] Sending translation to client with language ${client.language}`);
@@ -194,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Manejo de conexiones WebSocket
+  // WebSocket handling
   wss.on("connection", (ws, req) => {
     console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
     let currentRoom: string | null = null;
@@ -209,20 +150,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     };
 
-    const handleJoin = (roomId: string) => {
-      if (!rooms.has(roomId)) {
-        console.log("[WebSocket] Creating new room:", roomId);
-        rooms.set(roomId, new Set());
-      }
-
-      const roomClients = rooms.get(roomId)!;
-      roomClients.add(ws);
-      currentRoom = roomId;
-
-      console.log(`[WebSocket] Client joined room ${roomId}, total clients: ${roomClients.size}`);
-      sendMessage({ type: "joined", roomId, clients: roomClients.size });
-    };
-
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
@@ -233,7 +160,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sendMessage({ type: "error", error: "Room ID is required" });
             return;
           }
-          handleJoin(message.roomId);
+
+          if (!rooms.has(message.roomId)) {
+            rooms.set(message.roomId, new Set());
+          }
+
+          const roomClients = rooms.get(message.roomId)!;
+          roomClients.add(ws);
+          currentRoom = message.roomId;
+
+          console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
+          sendMessage({ type: "joined", roomId: message.roomId, clients: roomClients.size });
           return;
         }
 
@@ -283,6 +220,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const rooms = new Map<string, Set<WebSocket>>();
-
   return httpServer;
 }
