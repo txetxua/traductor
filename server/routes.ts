@@ -45,13 +45,13 @@ const translateText = (text: string, from: string, to: string): string => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Map to store SSE clients for each room
+  // Simplified SSE clients management
   const sseClients = new Map<string, Set<{
     send: (data: string) => void;
     language: string;
   }>>();
 
-  // SSE endpoint for translations
+  // Simplified SSE endpoint
   app.get("/api/translations/stream/:roomId", (req, res) => {
     const roomId = req.params.roomId;
     const language = req.query.language as string;
@@ -61,33 +61,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return;
     }
 
-    console.log(`[SSE] New client connected to room ${roomId} with language ${language}`);
+    console.log(`[SSE] Client connected to room ${roomId} with language ${language}`);
 
-    // Set headers for SSE
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive"
     });
 
-    // Create client handler
     const client = {
-      send: (data: string) => {
-        res.write(`data: ${data}\n\n`);
-      },
+      send: (data: string) => res.write(`data: ${data}\n\n`),
       language
     };
 
-    // Add client to room
     if (!sseClients.has(roomId)) {
       sseClients.set(roomId, new Set());
     }
     sseClients.get(roomId)!.add(client);
 
-    // Send initial connection confirmation
-    client.send(JSON.stringify({ type: "connected" }));
-
-    // Handle client disconnect
     req.on("close", () => {
       console.log(`[SSE] Client disconnected from room ${roomId}`);
       sseClients.get(roomId)?.delete(client);
@@ -97,12 +88,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Translation endpoint now broadcasts to SSE clients
+  // Simplified translation endpoint
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
     const result = translateSchema.safeParse(req.body);
     if (!result.success) {
-      console.error("[Translate] Validation error:", result.error);
       return res.status(400).json({ error: "Invalid translation request" });
     }
 
@@ -111,8 +101,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const translated = translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
-      // Broadcast translation to all SSE clients in the room
-      const roomClients = sseClients.get(req.body.roomId);
+      // Broadcast translation to clients in the room
+      const roomId = req.body.roomId;
+      const roomClients = sseClients.get(roomId);
+
       if (roomClients) {
         const message = JSON.stringify({
           type: "translation",
@@ -123,7 +115,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         roomClients.forEach(client => {
-          // Only send to clients with the target language
           if (client.language === to) {
             client.send(message);
           }
@@ -138,8 +129,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-
-  // Improved WebSocket server setup with explicit configuration
   const wss = new WebSocketServer({
     server: httpServer,
     path: "/ws",

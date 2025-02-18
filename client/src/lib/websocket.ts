@@ -16,8 +16,12 @@ export class WebSocketHandler {
   }
 
   private getWebSocketUrl() {
+    // En desarrollo, usa el mismo host y puerto que el servidor Express
+    const host = window.location.host.includes('localhost') || window.location.host.includes('.repl.co') 
+      ? window.location.host 
+      : window.location.host.replace('5173', '5000');
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = `${protocol}//${host}/ws`;
     console.log("[WebSocket] Using WebSocket URL:", wsUrl);
     return wsUrl;
   }
@@ -37,22 +41,15 @@ export class WebSocketHandler {
       this.ws.onopen = () => {
         console.log("[WebSocket] Connected successfully");
         this.isConnected = true;
-
-        // Join the room immediately after connection
         if (this.roomId) {
           console.log("[WebSocket] Joining room:", this.roomId);
           this.send({ type: "join", roomId: this.roomId });
-        } else {
-          console.error("[WebSocket] No room ID available");
-          this.onError?.(new Error("No room ID available for WebSocket connection"));
         }
       };
 
-      this.ws.onclose = (event) => {
-        console.log("[WebSocket] Connection closed:", event);
+      this.ws.onclose = () => {
+        console.log("[WebSocket] Connection closed");
         this.isConnected = false;
-
-        // Simple reconnection after 2 seconds
         if (!this.reconnectTimeout) {
           this.reconnectTimeout = setTimeout(() => {
             this.reconnectTimeout = null;

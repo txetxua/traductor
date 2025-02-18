@@ -16,16 +16,21 @@ export class TranslationHandler {
     this.connect();
   }
 
+  private getApiBaseUrl() {
+    // En desarrollo, usa el mismo host y puerto que el servidor Express
+    const host = window.location.host.includes('localhost') || window.location.host.includes('.repl.co')
+      ? window.location.host
+      : window.location.host.replace('5173', '5000');
+    return `${window.location.protocol}//${host}`;
+  }
+
   private connect() {
     try {
-      const url = `/api/translations/stream/${this.roomId}?language=${this.language}`;
+      const baseUrl = this.getApiBaseUrl();
+      const url = `${baseUrl}/api/translations/stream/${this.roomId}?language=${this.language}`;
       console.log("[Translations] Connecting to SSE:", url);
 
       this.eventSource = new EventSource(url);
-
-      this.eventSource.onopen = () => {
-        console.log("[Translations] SSE connection opened");
-      };
 
       this.eventSource.onmessage = (event) => {
         try {
@@ -42,22 +47,22 @@ export class TranslationHandler {
         }
       };
 
-      this.eventSource.onerror = (error) => {
-        console.error("[Translations] SSE error:", error);
-        this.onError?.(new Error("Error in SSE connection"));
+      this.eventSource.onerror = () => {
+        console.error("[Translations] SSE connection error");
+        this.onError?.(new Error("SSE connection error"));
       };
-
     } catch (error) {
-      console.error("[Translations] Error initializing SSE:", error);
+      console.error("[Translations] Error connecting:", error);
       this.onError?.(error as Error);
     }
   }
 
   async translate(text: string) {
     try {
+      const baseUrl = this.getApiBaseUrl();
       console.log("[Translations] Translating text:", text);
 
-      const response = await fetch("/api/translate", {
+      const response = await fetch(`${baseUrl}/api/translate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -74,10 +79,9 @@ export class TranslationHandler {
 
       const { translated } = await response.json();
       console.log("[Translations] Text translated:", translated);
-      
+
       // Show local transcription
       this.onTranslation(text, true);
-
     } catch (error) {
       console.error("[Translations] Error:", error);
       this.onError?.(error as Error);
