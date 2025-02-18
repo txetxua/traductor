@@ -1,11 +1,5 @@
 import { type Language, type TranslationMessage } from "@shared/schema";
 
-declare global {
-  interface Window {
-    webkitSpeechRecognition: any;
-  }
-}
-
 export class SpeechHandler {
   private recognition?: any;
   private ws!: WebSocket;
@@ -39,8 +33,8 @@ export class SpeechHandler {
           // Solo mostramos mensajes que vienen del otro participante
           if (translationMsg.from !== this.language) {
             console.log("[Speech] Traducción recibida del otro participante:", translationMsg);
-            // Para el receptor, mostramos el texto original del emisor y su traducción
-            this.onTranscript(translationMsg.translated, translationMsg.text);
+            // Para el receptor, mostramos solo la traducción
+            this.onTranscript("", translationMsg.translated);
           }
         }
       } catch (error) {
@@ -106,8 +100,8 @@ export class SpeechHandler {
         const { translated } = await response.json();
         console.log("[Speech] Traducción recibida del servidor:", translated);
 
-        // Para el emisor, mostramos nuestro texto original y la traducción
-        this.onTranscript(text, translated);
+        // El emisor no ve nada en su pantalla
+        this.onTranscript("", "");
 
         // Enviar al otro participante
         if (this.ws.readyState === WebSocket.OPEN) {
