@@ -71,10 +71,11 @@ export class SpeechHandler {
         const translationMsg = message as TranslationMessage;
         console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Solo procesar mensajes que no son propios
+        // Solo mostrar traducciones del otro participante
+        // Si soy español y recibo un mensaje de italiano -> muestro la traducción en español
+        // Si soy italiano y recibo un mensaje de español -> muestro la traducción en italiano
         if (translationMsg.from !== this.language) {
-          // Si soy español, mostrar en español
-          // Si soy italiano, mostrar en italiano
+          console.log(`[Speech] Mostrando traducción del mensaje de ${translationMsg.from} a ${this.language}:`, translationMsg.translated);
           this.onTranscript(translationMsg.translated, false);
         }
       }
@@ -131,8 +132,8 @@ export class SpeechHandler {
 
   private async handleRecognitionResult(text: string) {
     try {
-      // Mostrar el texto original al hablante
-      this.onTranscript(text, true);
+      // No mostramos el texto original al emisor
+      // Solo enviamos para traducir al otro participante
 
       // Determinar el idioma de destino
       const targetLanguage = this.language === "es" ? "it" : "es";
@@ -162,6 +163,7 @@ export class SpeechHandler {
           from: this.language,
           translated
         };
+        console.log("[Speech] Enviando traducción:", message);
         this.ws.send(JSON.stringify(message));
       }
     } catch (error) {

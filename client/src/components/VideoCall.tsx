@@ -29,7 +29,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [transcript, setTranscript] = useState("");
+  // Solo mostrar las traducciones del otro participante
+  const [remoteTranscript, setRemoteTranscript] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
   const [cameraError, setCameraError] = useState<string>();
@@ -46,7 +47,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       clearTimeout(timerRef.current);
     }
     timerRef.current = setTimeout(() => {
-      setTranscript("");
+      setRemoteTranscript("");
     }, delay);
   };
 
@@ -55,9 +56,12 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
     const handleSpeechResult = (text: string, isLocal: boolean) => {
       if (!mounted) return;
-      console.log("[VideoCall] Recibiendo texto:", text, "isLocal:", isLocal);
-      setTranscript(text);
-      clearTranscriptAfterDelay();
+      // Solo mostrar transcripciones remotas
+      if (!isLocal) {
+        console.log("[VideoCall] Recibiendo texto remoto:", text);
+        setRemoteTranscript(text);
+        clearTranscriptAfterDelay();
+      }
     };
 
     const speech = new SpeechHandler(
@@ -89,7 +93,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         setCameraError(error.message);
       }
 
-      // Intento de reconexión si es un error recuperable
       if (retryCount < maxRetries && 
           (error.name === 'NotReadableError' || 
            error.name === 'TrackStartError' || 
@@ -111,16 +114,15 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     async function initializeCall() {
       if (!mounted) return;
       try {
-        // Limpiar cualquier error anterior
         setCameraError(undefined);
 
-        // Verificar permisos primero
-        const permissions = await navigator.mediaDevices.getUserMedia({ 
-          video: videoEnabled, 
-          audio: true 
-        });
-        permissions.getTracks().forEach(track => track.stop());
+        // Liberar tracks existentes
+        if (localVideoRef.current?.srcObject) {
+          const stream = localVideoRef.current.srcObject as MediaStream;
+          stream.getTracks().forEach(track => track.stop());
+        }
 
+        // Verificar dispositivos
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
         const hasMicrophone = devices.some(device => device.kind === 'audioinput');
@@ -132,6 +134,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         if (!hasMicrophone) {
           throw new Error('No se detectó ningún micrófono');
         }
+
+        // Verificar permisos
+        const permissions = await navigator.mediaDevices.getUserMedia({ 
+          video: videoEnabled, 
+          audio: true 
+        });
+        permissions.getTracks().forEach(track => track.stop());
 
         const webrtc = new WebRTCConnection(
           roomId,
@@ -158,7 +167,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
                 title: "Conectado",
                 description: "La conexión se ha establecido correctamente.",
               });
-              // Resetear el contador de reintentos cuando la conexión es exitosa
               setRetryCount(0);
             }
           },
@@ -195,12 +203,20 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
+      if (localVideoRef.current?.srcObject) {
+        const stream = localVideoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
       webrtcRef.current?.close();
       speechRef.current?.stop();
     };
   }, [roomId, language, toast, videoEnabled, audioEnabled, retryCount]);
 
   const handleHangup = () => {
+    if (localVideoRef.current?.srcObject) {
+      const stream = localVideoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
     webrtcRef.current?.close();
     speechRef.current?.stop();
     setLocation("/");
@@ -256,11 +272,11 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        {/* Contenedor de subtítulos */}
+        {/* Solo mostrar subtítulos de traducciones remotas */}
         <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
-          {transcript && (
+          {remoteTranscript && (
             <Subtitles
-              transcript={transcript}
+              transcript={remoteTranscript}
               config={subtitlesConfig}
             />
           )}

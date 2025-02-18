@@ -11,7 +11,7 @@ const translateSchema = z.object({
   to: z.enum(["es", "it"])
 });
 
-// Palabras comunes en español e italiano para simular traducción
+// Palabras comunes en español e italiano
 const translations: Record<string, Record<string, string>> = {
   es: {
     "hola": "ciao",
@@ -195,22 +195,12 @@ const translateText = (text: string, from: string, to: string) => {
     return translated;
   }
 
-  // Si no hay traducción exacta de la frase, traducir palabra por palabra
+  // Si no hay traducción exacta, traducir palabra por palabra
   const words = lowerText.split(/\s+/);
   const translatedWords = words.map(word => {
-    const wordTranslation = translations[from]?.[word];
-    if (wordTranslation) {
-      console.log(`[Translate] Palabra traducida: ${word} -> ${wordTranslation}`);
-      return wordTranslation;
-    }
-    // Si no encontramos traducción, aplicar reglas básicas de traducción italiano-español
-    if (to === 'it') {
-      return word
-        .replace(/ción$/, 'zione')
-        .replace(/dad$/, 'tà')
-        .replace(/ar$/, 'are')
-        .replace(/er$/, 'ere')
-        .replace(/ir$/, 'ire');
+    if (translations[from]?.[word]) {
+      console.log(`[Translate] Palabra traducida: ${word} -> ${translations[from][word]}`);
+      return translations[from][word];
     }
     return word;
   });
@@ -281,8 +271,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           rooms.get(roomId)!.add(ws);
           console.log(`[WebSocket] Cliente añadido a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
-        } else if (message.type === "translation" || message.type === "offer" ||
-          message.type === "answer" || message.type === "ice-candidate") {
+        } else if (message.type === "translation") {
+          const translationMsg = message as TranslationMessage;
 
           if (!currentRoom || !rooms.has(currentRoom)) {
             console.warn("[WebSocket] Cliente no está en ninguna sala");
@@ -290,18 +280,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           const clientsInRoom = rooms.get(currentRoom)!;
-          console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
+          console.log(`[WebSocket] Enviando traducción a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
 
-          // Usar Array.from para convertir el Set en un array antes de iterarlo
-          Array.from(clientsInRoom).forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(data.toString());
-            }
-          });
-        } else if (message.type === "translation") {
-          const translationMsg = message as TranslationMessage;
-
-          // Store translation in database if we have an active call
+          // Guardar la traducción en la base de datos si tenemos una llamada activa
           if (currentRoom) {
             const call = await callStorage.getCall(currentRoom);
             if (call) {
@@ -314,6 +295,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
             }
           }
+
+          // Enviar la traducción a todos los clientes en la sala excepto al emisor
+          Array.from(clientsInRoom).forEach(client => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(translationMsg)); // Send as JSON
+            }
+          });
+        } else if (message.type === "offer" || message.type === "answer" ||
+                   message.type === "ice-candidate") {
+          if (!currentRoom || !rooms.has(currentRoom)) {
+            console.warn("[WebSocket] Cliente no está en ninguna sala");
+            return;
+          }
+
+          const clientsInRoom = rooms.get(currentRoom)!;
+          console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
+
+          Array.from(clientsInRoom).forEach(client => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              client.send(data.toString());
+            }
+          });
         }
       } catch (err) {
         console.error("[WebSocket] Error procesando mensaje:", err);
