@@ -60,17 +60,24 @@ const translateText = (text: string, from: string, to: string) => {
   // Si el idioma de origen y destino son iguales, no traducimos
   if (from === to) return text;
 
-  // Simular traducción cambiando el texto según el idioma destino
-  if (to === 'it') {
+  // Normalizar el texto a minúsculas para mejor coincidencia
+  const lowerText = text.toLowerCase();
+
+  // Buscar traducciones exactas primero
+  if (translations[from] && translations[from][lowerText]) {
+    console.log(`[Translate] Traducción exacta encontrada: ${text} -> ${translations[from][lowerText]}`);
+    return translations[from][lowerText];
+  }
+
+  // Si no hay traducción exacta, aplicar reglas de traducción
+  let translated = to === 'it' ? 
     // Traducir a italiano
-    return text
-      // Cambiar terminaciones comunes
+    text
       .replace(/ción/g, 'zione')
       .replace(/dad/g, 'tà')
       .replace(/ar$/g, 'are')
       .replace(/er$/g, 'ere')
       .replace(/ir$/g, 'ire')
-      // Cambiar palabras comunes
       .replace(/el/g, 'il')
       .replace(/la/g, 'la')
       .replace(/los/g, 'i')
@@ -79,28 +86,26 @@ const translateText = (text: string, from: string, to: string) => {
       .replace(/está/g, 'sta')
       .replace(/bien/g, 'bene')
       .replace(/mal/g, 'male')
-      // Añadir prefijo para indicar que es una traducción
-      .replace(/^/, '[IT] ');
-  } else {
+    :
     // Traducir a español
-    return text
-      // Cambiar terminaciones comunes
+    text
       .replace(/zione/g, 'ción')
       .replace(/tà/g, 'dad')
       .replace(/are$/g, 'ar')
       .replace(/ere$/g, 'er')
       .replace(/ire$/g, 'ir')
-      // Cambiar palabras comunes
       .replace(/il/g, 'el')
       .replace(/i /g, 'los ')
       .replace(/le /g, 'las ')
       .replace(/è/g, 'es')
       .replace(/sta/g, 'está')
       .replace(/bene/g, 'bien')
-      .replace(/male/g, 'mal')
-      // Añadir prefijo para indicar que es una traducción
-      .replace(/^/, '[ES] ');
-  }
+      .replace(/male/g, 'mal');
+
+  // Agregar prefijo para indicar el idioma
+  translated = `[${to.toUpperCase()}] ${translated}`;
+  console.log(`[Translate] Traducción generada: ${text} -> ${translated}`);
+  return translated;
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -140,10 +145,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   wss.on("connection", (ws) => {
     let currentRoom: string | null = null;
 
+    console.log("[WebSocket] Nueva conexión establecida");
+
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Mensaje recibido:", message.type);
+        console.log("[WebSocket] Mensaje recibido:", message.type, "para sala:", currentRoom);
 
         if (message.type === "join") {
           const roomId = message.roomId;
@@ -151,8 +158,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!rooms.has(roomId)) {
             rooms.set(roomId, new Set());
+            console.log(`[WebSocket] Nueva sala creada: ${roomId}`);
           }
           rooms.get(roomId)!.add(ws);
+          console.log(`[WebSocket] Cliente añadido a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
         } else if (message.type === "translation" || message.type === "offer" ||
           message.type === "answer" || message.type === "ice-candidate") {
           if (!currentRoom || !rooms.has(currentRoom)) {
@@ -161,6 +170,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           const clientsInRoom = rooms.get(currentRoom)!;
+          console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
+
           clientsInRoom.forEach((client) => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(data.toString());
@@ -175,10 +186,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on("close", () => {
       if (currentRoom && rooms.has(currentRoom)) {
         rooms.get(currentRoom)!.delete(ws);
+        console.log(`[WebSocket] Cliente desconectado de sala ${currentRoom}. Quedan ${rooms.get(currentRoom)!.size} clientes`);
+
         if (rooms.get(currentRoom)!.size === 0) {
           rooms.delete(currentRoom);
+          console.log(`[WebSocket] Sala ${currentRoom} eliminada por no tener clientes`);
         }
       }
+    });
+
+    ws.on("error", (error) => {
+      console.error("[WebSocket] Error en conexión:", error);
     });
   });
 

@@ -29,7 +29,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [transcript, setTranscript] = useState("");
+  const [localTranscript, setLocalTranscript] = useState("");
+  const [remoteTranscript, setRemoteTranscript] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
   const [cameraError, setCameraError] = useState<string>();
@@ -37,17 +38,32 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [videoEnabled, setVideoEnabled] = useState(true);
 
   useEffect(() => {
-    const handleSpeechResult = (text: string) => {
-      setTranscript(text);
+    const handleSpeechResult = (text: string, isLocal: boolean) => {
+      if (isLocal) {
+        setLocalTranscript(text);
+        setRemoteTranscript(""); // Limpiar el transcript remoto cuando hablamos
+      } else {
+        setRemoteTranscript(text);
+        setLocalTranscript(""); // Limpiar el transcript local cuando recibimos
+      }
     };
 
     const speech = new SpeechHandler(
       roomId,
       language,
-      handleSpeechResult
+      handleSpeechResult,
+      (error: Error) => {
+        console.error("[VideoCall] Error en SpeechHandler:", error);
+        toast({
+          variant: "destructive",
+          title: "Error en el reconocimiento de voz",
+          description: error.message,
+        });
+      }
     );
 
     const handleError = (error: Error) => {
+      console.error("[VideoCall] Error:", error);
       if (error.name === 'NotAllowedError') {
         setCameraError('No se ha dado permiso para acceder a la cámara');
       } else if (error.name === 'NotFoundError') {
@@ -86,6 +102,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             }
           },
           (state) => {
+            console.log("[VideoCall] Estado de conexión:", state);
             setConnectionState(state);
           },
           handleError
@@ -179,8 +196,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
         <Subtitles
-          transcript={transcript}
-          translated=""
+          transcript={localTranscript || remoteTranscript}
           config={subtitlesConfig}
         />
       </div>
