@@ -47,6 +47,8 @@ export class WebRTCConnection {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
         {
           urls: "turn:relay.metered.ca:80",
           username: "83c02581d3f4af5d3446bc3c",
@@ -62,7 +64,11 @@ export class WebRTCConnection {
           username: "83c02581d3f4af5d3446bc3c",
           credential: "L8YGPMtaJJ+tNcYK",
         }
-      ]
+      ],
+      iceTransportPolicy: "all",
+      iceCandidatePoolSize: 10,
+      bundlePolicy: "max-bundle",
+      rtcpMuxPolicy: "require"
     };
 
     this.pc = new RTCPeerConnection(configuration);
@@ -74,6 +80,16 @@ export class WebRTCConnection {
           type: "ice-candidate",
           payload: candidate
         });
+      }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
+      const state = this.pc.iceConnectionState;
+      console.log("[WebRTC] Estado de conexión ICE:", state);
+
+      if (state === 'failed' || state === 'disconnected') {
+        console.log("[WebRTC] Reintentando conexión ICE...");
+        this.pc.restartIce();
       }
     };
 
@@ -129,10 +145,14 @@ export class WebRTCConnection {
       console.log("[WebRTC] Iniciando con video:", videoEnabled);
 
       const constraints: MediaStreamConstraints = {
-        video: videoEnabled,
+        video: videoEnabled ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } : false,
         audio: {
           echoCancellation: true,
-          noiseSuppression: true
+          noiseSuppression: true,
+          autoGainControl: true
         }
       };
 
@@ -145,7 +165,10 @@ export class WebRTCConnection {
         }
       });
 
-      const offer = await this.pc.createOffer();
+      const offer = await this.pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
       await this.pc.setLocalDescription(offer);
       this.sendSignaling({
         type: "offer",
