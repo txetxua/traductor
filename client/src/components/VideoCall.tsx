@@ -29,7 +29,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // Estado para los subtítulos local y remoto
   const [localTranscript, setLocalTranscript] = useState("");
   const [remoteTranscript, setRemoteTranscript] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
@@ -40,7 +39,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
 
-  // Timer para limpiar subtítulos
   const localTimerRef = useRef<NodeJS.Timeout>();
   const remoteTimerRef = useRef<NodeJS.Timeout>();
 
@@ -71,31 +69,16 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       }
     };
 
-    const speech = new SpeechHandler(
-      roomId,
-      language,
-      handleSpeechResult,
-      (error: Error) => {
-        if (!mounted) return;
-        console.error("[VideoCall] Speech error:", error);
-        toast({
-          variant: "destructive",
-          title: "Error in speech recognition",
-          description: error.message,
-        });
-      }
-    );
-
     const handleError = async (error: Error) => {
       if (!mounted) return;
       console.error("[VideoCall] Error:", error);
 
       if (error.name === 'NotAllowedError') {
-        setCameraError('Permission to access the camera or microphone has not been granted');
+        setCameraError('Por favor, permite el acceso a la cámara y el micrófono para continuar');
       } else if (error.name === 'NotFoundError') {
-        setCameraError('No camera or microphone found');
+        setCameraError('No se encontró cámara o micrófono en tu dispositivo');
       } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-        setCameraError('The device is in use by another application');
+        setCameraError('Tu cámara o micrófono está siendo usado por otra aplicación');
       } else {
         setCameraError(error.message);
       }
@@ -112,7 +95,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       } else {
         toast({
           variant: "destructive",
-          title: "Call error",
+          title: "Error en la llamada",
           description: error.message,
         });
       }
@@ -123,36 +106,41 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       try {
         setCameraError(undefined);
 
-        // Release existing tracks
+        // Liberar tracks existentes
         if (localVideoRef.current?.srcObject) {
           const stream = localVideoRef.current.srcObject as MediaStream;
           stream.getTracks().forEach(track => track.stop());
         }
 
-        console.log("[VideoCall] Requesting media devices...");
+        console.log("[VideoCall] Solicitando acceso a dispositivos multimedia...");
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoEnabled,
+          video: true, // Siempre solicitar video primero
           audio: true
         }).catch((error) => {
-          console.error("[VideoCall] GetUserMedia error:", error);
+          console.error("[VideoCall] Error obteniendo dispositivos:", error);
           setCameraError(error.message);
           throw error;
         });
 
-        console.log("[VideoCall] Media stream obtained");
+        console.log("[VideoCall] Stream multimedia obtenido");
 
-        // Set up local video
+        if (!mounted) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        // Configurar video local
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           await localVideoRef.current.play().catch(console.error);
         }
 
-        // Initialize WebRTC with the stream
+        // Inicializar WebRTC con el stream
         const webrtc = new WebRTCConnection(
           roomId,
           (remoteStream) => {
             if (!mounted) return;
-            console.log("[VideoCall] Remote stream received");
+            console.log("[VideoCall] Stream remoto recibido");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
               remoteVideoRef.current.play().catch(console.error);
@@ -160,7 +148,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           },
           (state) => {
             if (!mounted) return;
-            console.log("[VideoCall] Connection state:", state);
+            console.log("[VideoCall] Estado de conexión:", state);
             setConnectionState(state);
 
             if (state === 'failed' || state === 'disconnected') {
@@ -181,8 +169,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         );
 
         await webrtc.start(stream);
-        console.log("[VideoCall] WebRTC connection started");
+        console.log("[VideoCall] Conexión WebRTC iniciada");
 
+        // Configurar estado inicial de audio/video
         stream.getAudioTracks().forEach(track => {
           track.enabled = audioEnabled;
         });
@@ -190,13 +179,28 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           track.enabled = videoEnabled;
         });
 
+        // Iniciar reconocimiento de voz
+        const speech = new SpeechHandler(
+          roomId,
+          language,
+          handleSpeechResult,
+          (error: Error) => {
+            if (!mounted) return;
+            console.error("[VideoCall] Error en reconocimiento de voz:", error);
+            toast({
+              variant: "destructive",
+              title: "Error en reconocimiento de voz",
+              description: error.message,
+            });
+          }
+        );
         speech.start();
 
         webrtcRef.current = webrtc;
         speechRef.current = speech;
 
       } catch (error) {
-        console.error("[VideoCall] Initialization error:", error);
+        console.error("[VideoCall] Error de inicialización:", error);
         handleError(error as Error);
       }
     }
