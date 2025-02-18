@@ -27,13 +27,12 @@ export class SpeechHandler {
 
   private setupRecognition() {
     try {
-      // Check for browser support
-      if (!('webkitSpeechRecognition' in window)) {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         throw new Error("Speech recognition is not supported in this browser. Try using Chrome.");
       }
 
-      // Initialize recognition
-      this.recognition = new webkitSpeechRecognition();
+      // Initialize recognition with proper fallback
+      this.recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
 
       // Configure recognition settings
       this.recognition.continuous = true;
@@ -59,22 +58,34 @@ export class SpeechHandler {
         // Only restart if we're still active
         if (this.isStarted) {
           console.log("[Speech] Restarting recognition");
-          try {
-            this.recognition?.start();
-          } catch (error) {
-            console.error("[Speech] Error restarting recognition:", error);
-            this.onError?.(error as Error);
-          }
+          setTimeout(() => {
+            try {
+              this.recognition?.start();
+            } catch (error) {
+              console.error("[Speech] Error restarting recognition:", error);
+              this.onError?.(error as Error);
+            }
+          }, 1000);
         }
       };
 
       this.recognition.onerror = (event) => {
+        console.error("[Speech] Recognition error:", event.error, event.message);
         if (event.error === 'no-speech') {
           console.log("[Speech] No speech detected");
           return;
         }
 
-        console.error("[Speech] Recognition error:", event.error, event.message);
+        if (event.error === 'audio-capture') {
+          this.onError?.(new Error("No microphone was found or microphone is disabled"));
+          return;
+        }
+
+        if (event.error === 'not-allowed') {
+          this.onError?.(new Error("Microphone access was not allowed"));
+          return;
+        }
+
         this.onError?.(new Error(`Speech recognition error: ${event.error}`));
       };
 

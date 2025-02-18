@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 import { type Language } from "@shared/schema";
 
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error("OPENAI_API_KEY environment variable is not set");
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
