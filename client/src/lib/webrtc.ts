@@ -68,7 +68,7 @@ export class WebRTCConnection {
 
       switch (message.type) {
         case "offer":
-          console.log("[WebRTC] Procesando oferta, estado:", this.pc.signalingState);
+          console.log("[WebRTC] Procesando oferta");
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
@@ -79,16 +79,13 @@ export class WebRTCConnection {
           break;
 
         case "answer":
-          console.log("[WebRTC] Procesando respuesta, estado:", this.pc.signalingState);
-          if (this.pc.signalingState !== "have-local-offer") {
-            console.log("[WebRTC] Ignorando respuesta, estado incorrecto");
-            return;
-          }
+          console.log("[WebRTC] Procesando respuesta");
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
           if (message.payload) {
+            console.log("[WebRTC] Agregando candidato ICE");
             try {
               await this.pc.addIceCandidate(message.payload);
             } catch (err) {
@@ -146,6 +143,7 @@ export class WebRTCConnection {
     this.pc.oniceconnectionstatechange = () => {
       console.log("[WebRTC] Estado de conexión ICE:", this.pc.iceConnectionState);
       if (this.pc.iceConnectionState === 'failed') {
+        console.log("[WebRTC] Reiniciando ICE tras fallo");
         this.pc.restartIce();
       }
     };

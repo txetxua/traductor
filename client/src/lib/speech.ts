@@ -66,14 +66,14 @@ export class SpeechHandler {
         const translationMsg = message as TranslationMessage;
         console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // El receptor (italiano) ve los mensajes originales del emisor (español)
+        // El receptor (italiano) ve la traducción al italiano de los mensajes del emisor
         if (this.language === "it" && translationMsg.from === "es") {
-          console.log("[Speech] (Receptor) Recibiendo mensaje en español:", translationMsg.text);
-          this.onTranscript(translationMsg.text, false);
+          console.log("[Speech] (Receptor) Mostrando traducción al italiano:", translationMsg.translated);
+          this.onTranscript(translationMsg.translated, false);
         }
-        // El emisor (español) ve las traducciones de los mensajes del receptor (italiano)
+        // El emisor (español) ve la traducción al español de los mensajes del receptor
         else if (this.language === "es" && translationMsg.from === "it") {
-          console.log("[Speech] (Emisor) Recibiendo traducción del italiano:", translationMsg.translated);
+          console.log("[Speech] (Emisor) Mostrando traducción al español:", translationMsg.translated);
           this.onTranscript(translationMsg.translated, false);
         }
       }
@@ -137,13 +137,10 @@ export class SpeechHandler {
     try {
       console.log(`[Speech] Texto reconocido en ${this.language}:`, text);
 
-      // Solo el receptor (italiano) ve su propio texto
-      if (this.language === "it") {
-        console.log("[Speech] Mostrando texto local del receptor");
-        this.onTranscript(text, true);
-      }
+      // Mostramos el texto local para ambos participantes
+      this.onTranscript(text, true);
 
-      // Siempre traducimos y enviamos el mensaje
+      // Traducimos y enviamos el mensaje
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: {
