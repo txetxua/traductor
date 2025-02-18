@@ -9,7 +9,6 @@ import {
 } from "@shared/schema";
 import { translateText } from "./translation-service";
 
-// Schema para validar las peticiones de traducción
 const translateSchema = z.object({
   text: z.string(),
   from: z.enum(["es", "it"]),
@@ -18,7 +17,6 @@ const translateSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Mapa para mantener las conexiones SSE por sala
   const sseClients = new Map<string, Set<{
     res: any;
     language: string;
@@ -26,15 +24,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }>>();
 
   const httpServer = createServer(app);
-
-  // Mapa de salas y sus clientes WebSocket
   const rooms = new Map<string, Set<WebSocket>>();
 
-  // Inicializar WebSocket Server
+  // Inicializar WebSocket Server con path específico
   const wss = new WebSocketServer({ 
     server: httpServer,
     path: '/ws',
-    perMessageDeflate: false
+    clientTracking: true
   });
 
   console.log("[WebSocket] Server initialized on /ws");
@@ -48,13 +44,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const message = JSON.parse(data.toString());
         console.log("[WebSocket] Message received:", message);
 
-        // Manejar unión a sala
         if (message.type === "join") {
           if (!message.roomId) {
             ws.send(JSON.stringify({ type: "error", error: "Room ID required" }));
             return;
           }
 
+          // Si ya estaba en una sala, eliminarlo
+          if (currentRoom) {
+            const oldRoom = rooms.get(currentRoom);
+            if (oldRoom) {
+              oldRoom.delete(ws);
+              if (oldRoom.size === 0) {
+                rooms.delete(currentRoom);
+              }
+            }
+          }
+
+          // Unir a la nueva sala
           if (!rooms.has(message.roomId)) {
             rooms.set(message.roomId, new Set());
           }
@@ -63,7 +70,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           roomClients.add(ws);
           currentRoom = message.roomId;
 
-          console.log(`[WebSocket] Client joined room ${message.roomId}`);
+          console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
           ws.send(JSON.stringify({ 
             type: "joined", 
             roomId: message.roomId,
@@ -72,39 +79,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
-        // Verificar que el cliente está en una sala
         if (!currentRoom) {
           ws.send(JSON.stringify({ type: "error", error: "Not in a room" }));
           return;
         }
 
-        // Reenviar mensajes de señalización WebRTC
         if (["offer", "answer", "ice-candidate"].includes(message.type)) {
-          const roomClients = rooms.get(currentRoom)!;
-          for (const client of roomClients) {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(message));
-            }
+          const roomClients = rooms.get(currentRoom);
+          if (!roomClients) {
+            console.error("[WebSocket] Room not found:", currentRoom);
+            return;
           }
+
+          // Convert Set to Array for iteration
+          Array.from(roomClients).forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+              try {
+                client.send(JSON.stringify(message));
+              } catch (err) {
+                console.error("[WebSocket] Error sending message:", err);
+              }
+            }
+          });
         }
 
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
-        ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
+        }
       }
     });
 
-    // Manejar desconexión
     ws.on("close", () => {
       if (currentRoom) {
         const roomClients = rooms.get(currentRoom);
         if (roomClients) {
           roomClients.delete(ws);
+          console.log(`[WebSocket] Client left room ${currentRoom}, remaining: ${roomClients.size}`);
           if (roomClients.size === 0) {
             rooms.delete(currentRoom);
           }
         }
       }
+    });
+
+    ws.on("error", (error) => {
+      console.error("[WebSocket] Connection error:", error);
     });
   });
 
@@ -174,13 +195,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
-        for (const client of roomClients) {
+        // Convert Set to Array for iteration
+        Array.from(roomClients).forEach((client) => {
           try {
             client.res.write(`data: ${JSON.stringify(message)}\n\n`);
           } catch (error) {
             console.error("[Translate] Error sending translation:", error);
           }
-        }
+        });
       }
 
       res.json({ translated });
