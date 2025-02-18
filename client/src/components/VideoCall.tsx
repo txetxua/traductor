@@ -104,6 +104,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           (state) => {
             console.log("[VideoCall] Estado de conexión:", state);
             setConnectionState(state);
+
+            if (state === 'failed' || state === 'disconnected') {
+              toast({
+                variant: "destructive",
+                title: "Error de conexión",
+                description: "Se perdió la conexión con el otro participante. Intentando reconectar...",
+              });
+            } else if (state === 'connected') {
+              toast({
+                title: "Conectado",
+                description: "La conexión se ha establecido correctamente.",
+              });
+            }
           },
           handleError
         );

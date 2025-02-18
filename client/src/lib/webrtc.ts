@@ -4,6 +4,9 @@ export class WebRTCConnection {
   private pc!: RTCPeerConnection;
   private stream?: MediaStream;
   private ws!: WebSocket;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private reconnectTimeout?: NodeJS.Timeout;
 
   constructor(
     private roomId: string,
@@ -24,12 +27,13 @@ export class WebRTCConnection {
 
     this.ws.onopen = () => {
       console.log("[WebRTC] WebSocket conectado");
+      this.reconnectAttempts = 0;
       this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
     };
 
     this.ws.onclose = () => {
       console.log("[WebRTC] WebSocket cerrado");
-      this.onError(new Error("La conexión con el servidor se ha perdido"));
+      this.handleReconnect();
     };
 
     this.ws.onerror = (error) => {
@@ -38,6 +42,60 @@ export class WebRTCConnection {
     };
 
     this.ws.onmessage = this.handleWebSocketMessage.bind(this);
+  }
+
+  private handleReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      console.log(`[WebRTC] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+
+      // Exponential backoff
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
+
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+      }
+
+      this.reconnectTimeout = setTimeout(() => {
+        this.initializePeerConnection();
+        this.initializeWebSocket();
+      }, delay);
+    } else {
+      console.error("[WebRTC] Máximo número de intentos de reconexión alcanzado");
+      this.onError(new Error("No se pudo restablecer la conexión"));
+    }
+  }
+
+  private async handleWebSocketMessage(event: MessageEvent) {
+    try {
+      const message: SignalingMessage = JSON.parse(event.data);
+      console.log("[WebRTC] Mensaje recibido:", message.type);
+
+      switch (message.type) {
+        case "offer":
+          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+          const answer = await this.pc.createAnswer();
+          await this.pc.setLocalDescription(answer);
+          this.sendSignaling({
+            type: "answer",
+            payload: answer
+          });
+          break;
+
+        case "answer":
+          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+          break;
+
+        case "ice-candidate":
+          if (this.pc.remoteDescription) {
+            await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
+          }
+          break;
+      }
+    } catch (err) {
+      console.error("[WebRTC] Error procesando mensaje:", err);
+      this.onError(err as Error);
+    }
   }
 
   private initializePeerConnection() {
@@ -70,6 +128,10 @@ export class WebRTCConnection {
       bundlePolicy: "max-bundle",
       rtcpMuxPolicy: "require"
     };
+
+    if (this.pc) {
+      this.pc.close();
+    }
 
     this.pc = new RTCPeerConnection(configuration);
 
@@ -105,39 +167,11 @@ export class WebRTCConnection {
       const state = this.pc.connectionState;
       console.log("[WebRTC] Estado de conexión:", state);
       this.onConnectionStateChange(state);
-    };
-  }
 
-  private async handleWebSocketMessage(event: MessageEvent) {
-    try {
-      const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Mensaje recibido:", message.type);
-
-      switch (message.type) {
-        case "offer":
-          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-          const answer = await this.pc.createAnswer();
-          await this.pc.setLocalDescription(answer);
-          this.sendSignaling({
-            type: "answer",
-            payload: answer
-          });
-          break;
-
-        case "answer":
-          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-          break;
-
-        case "ice-candidate":
-          if (this.pc.remoteDescription) {
-            await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
-          }
-          break;
+      if (state === 'failed') {
+        this.handleReconnect();
       }
-    } catch (err) {
-      console.error("[WebRTC] Error procesando mensaje:", err);
-      this.onError(err as Error);
-    }
+    };
   }
 
   async start(videoEnabled: boolean) {
@@ -170,6 +204,7 @@ export class WebRTCConnection {
         offerToReceiveVideo: true
       });
       await this.pc.setLocalDescription(offer);
+
       this.sendSignaling({
         type: "offer",
         payload: offer
@@ -186,13 +221,21 @@ export class WebRTCConnection {
   private sendSignaling(message: SignalingMessage) {
     if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+    } else {
+      console.error("[WebRTC] WebSocket no está abierto al intentar enviar mensaje");
+      this.handleReconnect();
     }
   }
 
   close() {
     console.log("[WebRTC] Cerrando conexión");
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
     this.stream?.getTracks().forEach(track => track.stop());
     this.pc.close();
-    this.ws.close();
+    if (this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close();
+    }
   }
 }
