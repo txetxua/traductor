@@ -20,35 +20,40 @@ export class WebSocketHandler {
 
   private getWebSocketUrl() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/socket`;
-    console.log("[WebSocket] URL configurada:", {
+    const baseUrl = window.location.host;
+    const wsUrl = `${protocol}//${baseUrl}/ws`;
+
+    console.log("[WebSocket] Configuración de URL:", {
       protocol,
-      host,
+      baseUrl,
       wsUrl,
-      windowLocation: window.location.href
+      locationHref: window.location.href,
+      locationProtocol: window.location.protocol,
+      locationHost: window.location.host
     });
+
     return wsUrl;
   }
 
   public connect() {
     try {
-      const wsUrl = this.getWebSocketUrl();
-      console.log("[WebSocket] Iniciando conexión:", wsUrl);
-
       if (this.ws) {
-        console.log("[WebSocket] Estado de conexión existente:", this.ws.readyState);
         if (this.ws.readyState === WebSocket.OPEN) {
-          console.log("[WebSocket] Ya existe una conexión activa");
+          console.log("[WebSocket] Conexión ya activa");
           return;
         }
+        console.log("[WebSocket] Cerrando conexión existente");
         this.ws.close();
+        this.ws = null;
       }
+
+      const wsUrl = this.getWebSocketUrl();
+      console.log("[WebSocket] Iniciando nueva conexión a:", wsUrl);
 
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log("[WebSocket] Conectado exitosamente");
+        console.log("[WebSocket] Conexión establecida exitosamente");
         this.reconnectAttempts = 0;
         this.isConnected = true;
         this.startHeartbeat();
@@ -60,7 +65,7 @@ export class WebSocketHandler {
       this.ws.onclose = (event) => {
         console.log("[WebSocket] Conexión cerrada:", {
           code: event.code,
-          reason: event.reason,
+          reason: event.reason || "Sin razón especificada",
           wasClean: event.wasClean
         });
         this.isConnected = false;
@@ -69,7 +74,7 @@ export class WebSocketHandler {
       };
 
       this.ws.onerror = (event) => {
-        console.error("[WebSocket] Error:", event);
+        console.error("[WebSocket] Error en la conexión:", event);
         this.onError?.(new Error("Error en la conexión WebSocket"));
       };
 
@@ -88,7 +93,7 @@ export class WebSocketHandler {
       };
 
     } catch (error) {
-      console.error("[WebSocket] Error inicializando:", error);
+      console.error("[WebSocket] Error inicializando conexión:", error);
       this.onError?.(error as Error);
     }
   }
@@ -105,7 +110,7 @@ export class WebSocketHandler {
           this.handleReconnect();
         }
       }
-    }, 30000); // 30 segundos
+    }, 30000);
   }
 
   private stopHeartbeat() {
@@ -128,7 +133,7 @@ export class WebSocketHandler {
 
       this.reconnectTimeout = setTimeout(() => {
         if (!this.isConnected) {
-          console.log("[WebSocket] Intentando reconectar...");
+          console.log("[WebSocket] Intentando reconexión...");
           this.connect();
         }
       }, delay);
@@ -139,13 +144,18 @@ export class WebSocketHandler {
   }
 
   public send(message: any) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error("[WebSocket] No se puede enviar mensaje, conexión no está abierta");
+      return;
+    }
+
+    try {
       const messageStr = JSON.stringify(message);
       console.log("[WebSocket] Enviando mensaje:", message);
       this.ws.send(messageStr);
-    } else {
-      console.error("[WebSocket] No se puede enviar mensaje, conexión no está abierta");
-      this.connect();
+    } catch (error) {
+      console.error("[WebSocket] Error enviando mensaje:", error);
+      this.onError?.(error as Error);
     }
   }
 
@@ -166,8 +176,15 @@ export class WebSocketHandler {
       clearTimeout(this.reconnectTimeout);
     }
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.close();
+    if (this.ws) {
+      try {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.close();
+        }
+      } catch (error) {
+        console.error("[WebSocket] Error cerrando conexión:", error);
+      }
+      this.ws = null;
     }
   }
 }

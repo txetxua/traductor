@@ -64,35 +64,38 @@ const translateText = (text: string, from: string, to: string): string => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Configure CORS for both HTTP and WebSocket
+  // Configure CORS middleware specifically for WebSocket upgrade requests
   app.use((req, res, next) => {
-    console.log("[Server] Incoming request:", {
-      method: req.method,
-      path: req.path,
-      origin: req.headers.origin,
-      upgrade: req.headers.upgrade,
-      host: req.headers.host
-    });
+    console.log("[Server] Request headers:", req.headers);
 
-    // Allow all origins for WebSocket connections
-    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+    const isWebSocketRequest = req.headers.upgrade?.toLowerCase() === 'websocket';
+
+    if (isWebSocketRequest) {
+      // Set CORS headers for WebSocket
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept, Origin, Authorization, Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version, Sec-WebSocket-Extensions');
+      res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
 
+      // Set WebSocket specific headers
+      res.setHeader('Upgrade', 'websocket');
+      res.setHeader('Connection', 'Upgrade');
+      res.setHeader('Sec-WebSocket-Protocol', 'websocket');
+
       if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        res.status(200).end();
+        return;
       }
     } else {
-      // Regular HTTP requests
+      // Regular HTTP request headers
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
 
       if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        res.status(200).end();
+        return;
       }
     }
 
@@ -124,12 +127,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // WebSocket server setup
   const wss = new WebSocketServer({
     server: httpServer,
-    path: "/socket",
+    path: "/ws",
     perMessageDeflate: false,
-    clientTracking: true
+    clientTracking: true,
+    verifyClient: (info, callback) => {
+      console.log("[WebSocket] Verificando cliente:", {
+        origin: info.origin,
+        secure: info.secure,
+        url: info.req.url,
+        headers: {
+          upgrade: info.req.headers.upgrade,
+          connection: info.req.headers.connection,
+          host: info.req.headers.host,
+          origin: info.req.headers.origin
+        }
+      });
+
+      // Accept all connections for now but log the verification
+      callback(true);
+    }
   });
 
-  console.log("[WebSocket] Server inicializado en /socket");
+  console.log("[WebSocket] Servidor inicializado en /ws");
 
   const rooms = new Map<string, Set<WebSocket>>();
 
@@ -146,7 +165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const heartbeatCheck = setInterval(() => {
       const now = Date.now();
-      if (now - lastHeartbeat > 60000) { // 60 segundos sin heartbeat
+      if (now - lastHeartbeat > 60000) {
         console.log("[WebSocket] Cliente inactivo, cerrando conexión");
         ws.terminate();
         clearInterval(heartbeatCheck);
@@ -156,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Mensaje recibido:", message.type);
+        console.log("[WebSocket] Mensaje recibido:", message);
 
         if (message.type === "heartbeat") {
           lastHeartbeat = Date.now();
