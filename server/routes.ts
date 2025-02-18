@@ -5,13 +5,24 @@ import { callStorage } from "./storage";
 import { z } from "zod";
 import { insertCallSchema, type SignalingMessage, type TranslationMessage } from "@shared/schema";
 
-// Translation schema
+// Schemas para validación de mensajes
+const messageSchema = z.object({
+  type: z.enum(["heartbeat", "join", "translation", "offer", "answer", "ice-candidate"]),
+  roomId: z.string().optional(),
+  text: z.string().optional(),
+  from: z.enum(["es", "it"]).optional(),
+  translated: z.string().optional(),
+  payload: z.any().optional()
+});
+
+// Schema para traducción
 const translateSchema = z.object({
   text: z.string(),
   from: z.enum(["es", "it"]),
   to: z.enum(["es", "it"])
 });
 
+// Diccionario simple de traducciones
 const translations = {
   "es": {
     "hola": "ciao",
@@ -20,15 +31,7 @@ const translations = {
     "por favor": "per favore",
     "sí": "sì",
     "no": "no",
-    "adiós": "arrivederci",
-    "hasta luego": "a dopo",
-    "¿cómo estás?": "come stai?",
-    "bien": "bene",
-    "mal": "male",
-    "no entiendo": "non capisco",
-    "¿puedes repetir?": "puoi ripetere?",
-    "más despacio": "più lentamente",
-    "entiendo": "capisco"
+    "adiós": "arrivederci"
   },
   "it": {
     "ciao": "hola",
@@ -37,71 +40,23 @@ const translations = {
     "per favore": "por favor",
     "sì": "sí",
     "no": "no",
-    "arrivederci": "adiós",
-    "a dopo": "hasta luego",
-    "come stai?": "¿cómo estás?",
-    "bene": "bien",
-    "male": "mal",
-    "non capisco": "no entiendo",
-    "puoi ripetere?": "¿puedes repetir?",
-    "più lentamente": "más despacio",
-    "capisco": "entiendo"
+    "arrivederci": "adiós"
   }
 } as const;
 
-// Simple translation function
+// Función simple de traducción
 const translateText = (text: string, from: string, to: string): string => {
   if (from === to) return text;
-
   const phrases = text.toLowerCase().split(/[.!?]+/).filter(Boolean);
   const translatedPhrases = phrases.map(phrase => {
     const trimmedPhrase = phrase.trim();
     const dict = from === "es" ? translations.es : translations.it;
     return dict[trimmedPhrase as keyof typeof dict] || trimmedPhrase;
   });
-
   return translatedPhrases.join(". ").trim();
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Configure CORS middleware specifically for WebSocket upgrade requests
-  app.use((req, res, next) => {
-    console.log("[Server] Request headers:", req.headers);
-
-    const isWebSocketRequest = req.headers.upgrade?.toLowerCase() === 'websocket';
-
-    if (isWebSocketRequest) {
-      // Set CORS headers for WebSocket
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', '*');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-      // Set WebSocket specific headers
-      res.setHeader('Upgrade', 'websocket');
-      res.setHeader('Connection', 'Upgrade');
-      res.setHeader('Sec-WebSocket-Protocol', 'websocket');
-
-      if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-      }
-    } else {
-      // Regular HTTP request headers
-      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-      if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-      }
-    }
-
-    next();
-  });
-
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
     const result = translateSchema.safeParse(req.body);
@@ -121,97 +76,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create HTTP server
   const httpServer = createServer(app);
+  const rooms = new Map<string, Set<WebSocket>>();
 
-  // WebSocket server setup
+  // Configuración del servidor WebSocket
   const wss = new WebSocketServer({
     server: httpServer,
     path: "/ws",
-    perMessageDeflate: false,
-    clientTracking: true,
-    verifyClient: (info, callback) => {
-      console.log("[WebSocket] Verificando cliente:", {
-        origin: info.origin,
-        secure: info.secure,
-        url: info.req.url,
-        headers: {
-          upgrade: info.req.headers.upgrade,
-          connection: info.req.headers.connection,
-          host: info.req.headers.host,
-          origin: info.req.headers.origin
-        }
-      });
-
-      // Accept all connections for now but log the verification
-      callback(true);
-    }
+    perMessageDeflate: false
   });
 
   console.log("[WebSocket] Servidor inicializado en /ws");
 
-  const rooms = new Map<string, Set<WebSocket>>();
-
   wss.on("connection", (ws, req) => {
-    console.log("[WebSocket] Nueva conexión entrante:", {
-      address: req.socket.remoteAddress,
-      url: req.url,
-      origin: req.headers.origin,
-      host: req.headers.host
-    });
-
+    console.log("[WebSocket] Nueva conexión entrante");
     let currentRoom: string | null = null;
-    let lastHeartbeat = Date.now();
-
-    const heartbeatCheck = setInterval(() => {
-      const now = Date.now();
-      if (now - lastHeartbeat > 60000) {
-        console.log("[WebSocket] Cliente inactivo, cerrando conexión");
-        ws.terminate();
-        clearInterval(heartbeatCheck);
-      }
-    }, 30000);
 
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
         console.log("[WebSocket] Mensaje recibido:", message);
 
-        if (message.type === "heartbeat") {
-          lastHeartbeat = Date.now();
+        // Validar formato del mensaje
+        const result = messageSchema.safeParse(message);
+        if (!result.success) {
+          console.error("[WebSocket] Error de validación:", result.error);
+          ws.send(JSON.stringify({ type: "error", error: "Formato de mensaje inválido" }));
           return;
         }
 
-        if (message.type === "join") {
-          const roomId = message.roomId;
-          currentRoom = roomId;
+        // Procesar mensaje según su tipo
+        if (message.type === "join" && message.roomId) {
+          currentRoom = message.roomId;
 
-          if (!rooms.has(roomId)) {
-            rooms.set(roomId, new Set());
+          if (!rooms.has(currentRoom)) {
+            rooms.set(currentRoom, new Set());
           }
+          rooms.get(currentRoom)!.add(ws);
 
-          rooms.get(roomId)!.add(ws);
-          console.log(`[WebSocket] Cliente unido a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
-
-          ws.send(JSON.stringify({ type: "joined", roomId }));
+          console.log(`[WebSocket] Cliente unido a sala ${currentRoom}. Total clientes: ${rooms.get(currentRoom)!.size}`);
+          ws.send(JSON.stringify({ type: "joined", roomId: currentRoom }));
           return;
         }
 
+        // Para otros tipos de mensajes, verificar que el cliente esté en una sala
         if (!currentRoom || !rooms.has(currentRoom)) {
-          console.log("[WebSocket] Cliente intentó enviar mensaje sin estar en una sala");
           ws.send(JSON.stringify({ type: "error", error: "No está en una sala" }));
           return;
         }
 
-        // Broadcast message to other clients in the room
+        // Transmitir mensaje a otros clientes en la misma sala
         const clientsInRoom = rooms.get(currentRoom)!;
         clientsInRoom.forEach(client => {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
-            try {
-              client.send(data.toString());
-            } catch (error) {
-              console.error("[WebSocket] Error enviando mensaje:", error);
-            }
+            client.send(data.toString());
           }
         });
 
@@ -222,7 +140,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     ws.on("close", () => {
-      clearInterval(heartbeatCheck);
       if (currentRoom && rooms.has(currentRoom)) {
         rooms.get(currentRoom)!.delete(ws);
         console.log(`[WebSocket] Cliente dejó sala ${currentRoom}. Clientes restantes: ${rooms.get(currentRoom)!.size}`);
@@ -236,10 +153,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on("error", (error) => {
       console.error("[WebSocket] Error en la conexión:", error);
     });
-  });
-
-  wss.on("error", (error) => {
-    console.error("[WebSocket] Error en el servidor:", error);
   });
 
   return httpServer;
