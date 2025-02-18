@@ -11,29 +11,41 @@ export class SpeechHandler {
   private ws: WebSocket;
   private isStarted: boolean = false;
   private reconnectTimeout?: NodeJS.Timeout;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
 
   constructor(
     private roomId: string,
     private language: Language,
     private onTranscript: (text: string, translated: string) => void
   ) {
+    this.initializeWebSocket();
+    this.setupRecognition();
+  }
+
+  private initializeWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
+    console.log("[Speech] Conectando a WebSocket:", wsUrl);
+
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
       console.log("[Speech] WebSocket conectado");
-      this.ws.send(JSON.stringify({ type: "join", roomId }));
+      this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
+      this.reconnectAttempts = 0;
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+      }
     };
 
     this.ws.onclose = () => {
-      console.log("[Speech] WebSocket cerrado, intentando reconectar...");
-      // Intentar reconectar en 2 segundos
-      this.reconnectTimeout = setTimeout(() => {
-        if (this.isStarted) {
-          this.ws = new WebSocket(wsUrl);
-        }
-      }, 2000);
+      console.log("[Speech] WebSocket cerrado");
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.reconnectAttempts++;
+        console.log(`[Speech] Intentando reconectar (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        this.reconnectTimeout = setTimeout(() => this.initializeWebSocket(), 2000);
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -51,8 +63,6 @@ export class SpeechHandler {
         console.error("[Speech] Error procesando mensaje:", error);
       }
     };
-
-    this.setupRecognition();
   }
 
   private setupRecognition() {
@@ -95,10 +105,10 @@ export class SpeechHandler {
     };
 
     this.recognition.onresult = async (event: any) => {
-      const text = event.results[event.results.length - 1][0].transcript;
-      console.log("[Speech] Texto reconocido:", text);
-
       try {
+        const text = event.results[event.results.length - 1][0].transcript;
+        console.log("[Speech] Texto reconocido:", text);
+
         const response = await fetch("/api/translate", {
           method: "POST",
           headers: {
@@ -125,9 +135,12 @@ export class SpeechHandler {
           from: this.language,
           translated
         };
-        console.log("[Speech] Enviando traducción:", message);
+
         if (this.ws.readyState === WebSocket.OPEN) {
+          console.log("[Speech] Enviando traducción:", message);
           this.ws.send(JSON.stringify(message));
+          // También mostramos localmente nuestra propia traducción
+          this.onTranscript(text, translated);
         } else {
           console.warn("[Speech] WebSocket no está abierto, mensaje no enviado");
         }
