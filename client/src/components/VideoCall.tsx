@@ -29,7 +29,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // Solo mostrar las traducciones del otro participante
+  // Only display the other participant's translations
   const [remoteTranscript, setRemoteTranscript] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
@@ -39,7 +39,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
 
-  // Timer para limpiar los subtítulos
+  // Timer to clear subtitles
   const timerRef = useRef<NodeJS.Timeout>();
 
   const clearTranscriptAfterDelay = (delay: number = 5000) => {
@@ -56,9 +56,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
     const handleSpeechResult = (text: string, isLocal: boolean) => {
       if (!mounted) return;
-      // Solo mostrar transcripciones remotas
+      // Only show remote transcripts
       if (!isLocal) {
-        console.log("[VideoCall] Recibiendo texto remoto:", text);
+        console.log("[VideoCall] Receiving remote text:", text);
         setRemoteTranscript(text);
         clearTranscriptAfterDelay();
       }
@@ -70,10 +70,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       handleSpeechResult,
       (error: Error) => {
         if (!mounted) return;
-        console.error("[VideoCall] Error en SpeechHandler:", error);
+        console.error("[VideoCall] Error in SpeechHandler:", error);
         toast({
           variant: "destructive",
-          title: "Error en el reconocimiento de voz",
+          title: "Error in speech recognition",
           description: error.message,
         });
       }
@@ -84,18 +84,18 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       console.error("[VideoCall] Error:", error);
 
       if (error.name === 'NotAllowedError') {
-        setCameraError('No se ha dado permiso para acceder a la cámara o micrófono');
+        setCameraError('Permission to access the camera or microphone has not been granted');
       } else if (error.name === 'NotFoundError') {
-        setCameraError('No se encontró ninguna cámara o micrófono');
+        setCameraError('No camera or microphone found');
       } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-        setCameraError('El dispositivo está en uso por otra aplicación');
+        setCameraError('The device is in use by another application');
       } else {
         setCameraError(error.message);
       }
 
-      if (retryCount < maxRetries && 
-          (error.name === 'NotReadableError' || 
-           error.name === 'TrackStartError' || 
+      if (retryCount < maxRetries &&
+          (error.name === 'NotReadableError' ||
+           error.name === 'TrackStartError' ||
            error.message.includes('failed to connect'))) {
         setRetryCount(prev => prev + 1);
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -105,7 +105,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       } else {
         toast({
           variant: "destructive",
-          title: "Error en la llamada",
+          title: "Call error",
           description: error.message,
         });
       }
@@ -116,29 +116,29 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       try {
         setCameraError(undefined);
 
-        // Liberar tracks existentes
+        // Release existing tracks
         if (localVideoRef.current?.srcObject) {
           const stream = localVideoRef.current.srcObject as MediaStream;
           stream.getTracks().forEach(track => track.stop());
         }
 
-        // Verificar dispositivos
+        // Check devices
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
         const hasMicrophone = devices.some(device => device.kind === 'audioinput');
 
         if (!hasCamera && videoEnabled) {
-          throw new Error('No se detectó ninguna cámara');
+          throw new Error('No camera detected');
         }
 
         if (!hasMicrophone) {
-          throw new Error('No se detectó ningún micrófono');
+          throw new Error('No microphone detected');
         }
 
-        // Verificar permisos
-        const permissions = await navigator.mediaDevices.getUserMedia({ 
-          video: videoEnabled, 
-          audio: true 
+        // Check permissions
+        const permissions = await navigator.mediaDevices.getUserMedia({
+          video: videoEnabled,
+          audio: true
         });
         permissions.getTracks().forEach(track => track.stop());
 
@@ -153,19 +153,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           },
           (state) => {
             if (!mounted) return;
-            console.log("[VideoCall] Estado de conexión:", state);
+            console.log("[VideoCall] Connection state:", state);
             setConnectionState(state);
 
             if (state === 'failed' || state === 'disconnected') {
               toast({
                 variant: "destructive",
-                title: "Error de conexión",
-                description: "Se perdió la conexión con el otro participante. Intentando reconectar...",
+                title: "Connection error",
+                description: "Connection with the other participant lost. Trying to reconnect...",
               });
             } else if (state === 'connected') {
               toast({
-                title: "Conectado",
-                description: "La conexión se ha establecido correctamente.",
+                title: "Connected",
+                description: "Connection established successfully.",
               });
               setRetryCount(0);
             }
@@ -272,7 +272,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        {/* Solo mostrar subtítulos de traducciones remotas */}
+        {/* Only show subtitles for remote translations */}
         <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
           {remoteTranscript && (
             <Subtitles

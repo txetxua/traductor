@@ -14,7 +14,7 @@ export class SpeechHandler {
     private onTranscript: (text: string, isLocal: boolean) => void,
     private onError?: (error: Error) => void
   ) {
-    console.log("[Speech] Inicializando SpeechHandler para sala:", roomId, "idioma:", language);
+    console.log("[Speech] Initializing SpeechHandler for room:", roomId, "language:", language);
     this.initializeWebSocket();
     this.setupRecognition();
   }
@@ -22,34 +22,50 @@ export class SpeechHandler {
   private initializeWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    console.log("[Speech] Conectando a WebSocket:", wsUrl);
+    console.log("[Speech] Connecting to WebSocket:", wsUrl);
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log("[Speech] WebSocket conectado");
+        console.log("[Speech] WebSocket connected");
         this.reconnectAttempts = 0;
-
-        // Unirse a la sala
         const joinMessage = { type: "join", roomId: this.roomId };
-        console.log("[Speech] Enviando mensaje de unión:", joinMessage);
+        console.log("[Speech] Sending join message:", joinMessage);
         this.ws.send(JSON.stringify(joinMessage));
       };
 
       this.ws.onclose = (event) => {
-        console.log("[Speech] WebSocket cerrado. Clean:", event.wasClean, "Código:", event.code);
+        console.log("[Speech] WebSocket closed. Clean:", event.wasClean, "Code:", event.code);
         this.handleReconnect();
       };
 
       this.ws.onerror = (error) => {
-        console.error("[Speech] Error en WebSocket:", error);
-        this.onError?.(new Error("Error en la conexión WebSocket"));
+        console.error("[Speech] WebSocket error:", error);
+        this.onError?.(new Error("WebSocket connection error"));
       };
 
-      this.ws.onmessage = this.handleWebSocketMessage.bind(this);
+      this.ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log("[Speech] WebSocket message received:", message);
+
+          if (message.type === "translation") {
+            const translationMsg = message as TranslationMessage;
+
+            // Only show translations from the other participant
+            if (translationMsg.from !== this.language) {
+              console.log("[Speech] Showing translation:", translationMsg.translated);
+              this.onTranscript(translationMsg.translated, false);
+            }
+          }
+        } catch (error) {
+          console.error("[Speech] Error processing message:", error);
+          this.onError?.(error as Error);
+        }
+      };
     } catch (error) {
-      console.error("[Speech] Error inicializando WebSocket:", error);
+      console.error("[Speech] Error initializing WebSocket:", error);
       this.onError?.(error as Error);
     }
   }
@@ -59,48 +75,25 @@ export class SpeechHandler {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
 
-      console.log(`[Speech] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts} en ${delay}ms`);
+      console.log(`[Speech] Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
 
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
       }
 
       this.reconnectTimeout = setTimeout(() => {
-        console.log("[Speech] Intentando reconectar...");
+        console.log("[Speech] Attempting to reconnect...");
         this.initializeWebSocket();
       }, delay);
     } else {
-      console.error("[Speech] Máximo de intentos de reconexión alcanzado");
-      this.onError?.(new Error("No se pudo restablecer la conexión"));
-    }
-  }
-
-  private handleWebSocketMessage(event: MessageEvent) {
-    try {
-      const message = JSON.parse(event.data);
-      console.log("[Speech] Mensaje WebSocket recibido:", message);
-
-      if (message.type === "translation") {
-        const translationMsg = message as TranslationMessage;
-        console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
-
-        // Solo mostrar traducciones del otro participante
-        // Si soy español y recibo un mensaje de italiano -> muestro la traducción en español
-        // Si soy italiano y recibo un mensaje de español -> muestro la traducción en italiano
-        if (translationMsg.from !== this.language) {
-          console.log(`[Speech] Mostrando traducción del mensaje de ${translationMsg.from} a ${this.language}:`, translationMsg.translated);
-          this.onTranscript(translationMsg.translated, false);
-        }
-      }
-    } catch (error) {
-      console.error("[Speech] Error procesando mensaje:", error);
-      this.onError?.(error as Error);
+      console.error("[Speech] Maximum reconnection attempts reached");
+      this.onError?.(new Error("Could not reestablish connection"));
     }
   }
 
   private setupRecognition() {
     if (!("webkitSpeechRecognition" in window)) {
-      this.onError?.(new Error("El reconocimiento de voz no está soportado en este navegador"));
+      this.onError?.(new Error("Speech recognition is not supported in this browser"));
       return;
     }
 
@@ -116,71 +109,72 @@ export class SpeechHandler {
       this.recognition.lang = langMap[this.language];
 
       this.recognition.onstart = () => {
-        console.log("[Speech] Reconocimiento iniciado");
+        console.log("[Speech] Recognition started");
         this.isStarted = true;
       };
 
       this.recognition.onend = () => {
-        console.log("[Speech] Reconocimiento finalizado");
+        console.log("[Speech] Recognition ended");
         if (this.isStarted) {
+          console.log("[Speech] Restarting recognition");
           this.recognition.start();
         }
       };
 
       this.recognition.onerror = (event: any) => {
         if (event.error === 'no-speech') return;
-        console.error("[Speech] Error en reconocimiento:", event.error);
-        this.onError?.(new Error(`Error en reconocimiento de voz: ${event.error}`));
+        console.error("[Speech] Recognition error:", event.error);
+        this.onError?.(new Error(`Speech recognition error: ${event.error}`));
       };
 
       this.recognition.onresult = async (event: any) => {
-        const text = event.results[event.results.length - 1][0].transcript;
-        await this.handleRecognitionResult(text);
+        try {
+          const text = event.results[event.results.length - 1][0].transcript;
+          console.log("[Speech] Text recognized:", text);
+
+          if (!text.trim()) {
+            console.log("[Speech] Empty text, ignoring");
+            return;
+          }
+
+          // Get translation
+          const response = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              from: this.language,
+              to: this.language === "es" ? "it" : "es"
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Translation error: ${response.status}`);
+          }
+
+          const { translated } = await response.json();
+          console.log(`[Speech] Text translated: "${text}" -> "${translated}"`);
+
+          // Send translation through WebSocket
+          if (this.ws.readyState === WebSocket.OPEN) {
+            const message: TranslationMessage = {
+              type: "translation",
+              text,
+              from: this.language,
+              translated
+            };
+            console.log("[Speech] Sending translation:", message);
+            this.ws.send(JSON.stringify(message));
+          } else {
+            console.error("[Speech] WebSocket is not open");
+          }
+        } catch (error) {
+          console.error("[Speech] Error:", error);
+          this.onError?.(error as Error);
+        }
       };
     } catch (error) {
-      console.error("[Speech] Error configurando reconocimiento:", error);
-      this.onError?.(error as Error);
-    }
-  }
-
-  private async handleRecognitionResult(text: string) {
-    try {
-      // No mostramos el texto original al emisor
-      // Solo enviamos para traducir al otro participante
-
-      // Determinar el idioma de destino
-      const targetLanguage = this.language === "es" ? "it" : "es";
-
-      // Obtener la traducción
-      const response = await fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          from: this.language,
-          to: targetLanguage
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error("Error en la traducción");
-      }
-
-      const { translated } = await response.json();
-
-      // Enviar la traducción a través de WebSocket
-      if (this.ws.readyState === WebSocket.OPEN) {
-        const message: TranslationMessage = {
-          type: "translation",
-          text,
-          from: this.language,
-          translated
-        };
-        console.log("[Speech] Enviando traducción:", message);
-        this.ws.send(JSON.stringify(message));
-      }
-    } catch (error) {
-      console.error("[Speech] Error:", error);
+      console.error("[Speech] Error setting up recognition:", error);
       this.onError?.(error as Error);
     }
   }
@@ -190,7 +184,7 @@ export class SpeechHandler {
       try {
         this.recognition.start();
       } catch (error) {
-        console.error("[Speech] Error al iniciar:", error);
+        console.error("[Speech] Error starting:", error);
         this.onError?.(error as Error);
       }
     }
@@ -202,7 +196,7 @@ export class SpeechHandler {
       try {
         this.recognition.stop();
       } catch (error) {
-        console.error("[Speech] Error al detener:", error);
+        console.error("[Speech] Error stopping:", error);
       }
     }
     if (this.reconnectTimeout) {
