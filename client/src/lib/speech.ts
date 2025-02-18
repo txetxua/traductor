@@ -24,26 +24,34 @@ export class SpeechHandler {
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     console.log("[Speech] Conectando a WebSocket:", wsUrl);
 
-    this.ws = new WebSocket(wsUrl);
+    try {
+      this.ws = new WebSocket(wsUrl);
 
-    this.ws.onopen = () => {
-      console.log("[Speech] WebSocket conectado");
-      this.reconnectAttempts = 0;
-      const joinMessage = { type: "join", roomId: this.roomId };
-      this.ws.send(JSON.stringify(joinMessage));
-    };
+      this.ws.onopen = () => {
+        console.log("[Speech] WebSocket conectado");
+        this.reconnectAttempts = 0;
 
-    this.ws.onclose = () => {
-      console.log("[Speech] WebSocket cerrado");
-      this.handleReconnect();
-    };
+        // Unirse a la sala
+        const joinMessage = { type: "join", roomId: this.roomId };
+        console.log("[Speech] Enviando mensaje de unión:", joinMessage);
+        this.ws.send(JSON.stringify(joinMessage));
+      };
 
-    this.ws.onerror = (error) => {
-      console.error("[Speech] Error en WebSocket:", error);
-      this.onError?.(new Error("Error en la conexión WebSocket"));
-    };
+      this.ws.onclose = (event) => {
+        console.log("[Speech] WebSocket cerrado. Clean:", event.wasClean, "Código:", event.code);
+        this.handleReconnect();
+      };
 
-    this.ws.onmessage = this.handleWebSocketMessage.bind(this);
+      this.ws.onerror = (error) => {
+        console.error("[Speech] Error en WebSocket:", error);
+        this.onError?.(new Error("Error en la conexión WebSocket"));
+      };
+
+      this.ws.onmessage = this.handleWebSocketMessage.bind(this);
+    } catch (error) {
+      console.error("[Speech] Error inicializando WebSocket:", error);
+      this.onError?.(error as Error);
+    }
   }
 
   private handleReconnect() {
@@ -51,14 +59,18 @@ export class SpeechHandler {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
 
+      console.log(`[Speech] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts} en ${delay}ms`);
+
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
       }
 
       this.reconnectTimeout = setTimeout(() => {
+        console.log("[Speech] Intentando reconectar...");
         this.initializeWebSocket();
       }, delay);
     } else {
+      console.error("[Speech] Máximo de intentos de reconexión alcanzado");
       this.onError?.(new Error("No se pudo restablecer la conexión"));
     }
   }
@@ -66,6 +78,7 @@ export class SpeechHandler {
   private handleWebSocketMessage(event: MessageEvent) {
     try {
       const message = JSON.parse(event.data);
+      console.log("[Speech] Mensaje WebSocket recibido:", message);
 
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;

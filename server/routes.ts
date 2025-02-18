@@ -179,23 +179,19 @@ const translations: Record<string, Record<string, string>> = {
 const translateText = (text: string, from: string, to: string) => {
   console.log(`[Translate] Traduciendo: "${text}" de ${from} a ${to}`);
 
-  // Si el idioma de origen y destino son iguales, no traducimos
   if (from === to) {
     console.log("[Translate] Mismo idioma, retornando texto original");
     return text;
   }
 
-  // Normalizar el texto a minúsculas para mejor coincidencia
   const lowerText = text.toLowerCase().trim();
 
-  // Primero intentar traducir la frase completa
   if (translations[from] && translations[from][lowerText]) {
     const translated = translations[from][lowerText];
     console.log(`[Translate] Traducción exacta encontrada: ${text} -> ${translated}`);
     return translated;
   }
 
-  // Si no hay traducción exacta, traducir palabra por palabra
   const words = lowerText.split(/\s+/);
   const translatedWords = words.map(word => {
     if (translations[from]?.[word]) {
@@ -271,46 +267,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           rooms.get(roomId)!.add(ws);
           console.log(`[WebSocket] Cliente añadido a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
+
+        } else if (!currentRoom || !rooms.has(currentRoom)) {
+          console.warn("[WebSocket] Cliente no está en ninguna sala");
+          return;
+
         } else if (message.type === "translation") {
           const translationMsg = message as TranslationMessage;
-
-          if (!currentRoom || !rooms.has(currentRoom)) {
-            console.warn("[WebSocket] Cliente no está en ninguna sala");
-            return;
-          }
-
           const clientsInRoom = rooms.get(currentRoom)!;
-          console.log(`[WebSocket] Enviando traducción a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
 
-          // Guardar la traducción en la base de datos si tenemos una llamada activa
-          if (currentRoom) {
-            const call = await callStorage.getCall(currentRoom);
-            if (call) {
-              await callStorage.createTranslation({
-                callId: call.id,
-                sourceText: translationMsg.text,
-                translatedText: translationMsg.translated,
-                fromLanguage: translationMsg.from,
-                toLanguage: translationMsg.from === "es" ? "it" : "es"
-              });
-            }
+          console.log(`[WebSocket] Procesando traducción:`, {
+            from: translationMsg.from,
+            text: translationMsg.text,
+            translated: translationMsg.translated,
+            clientsInRoom: clientsInRoom.size
+          });
+
+          // Guardar traducción en la base de datos
+          const call = await callStorage.getCall(currentRoom);
+          if (call) {
+            await callStorage.createTranslation({
+              callId: call.id,
+              sourceText: translationMsg.text,
+              translatedText: translationMsg.translated,
+              fromLanguage: translationMsg.from,
+              toLanguage: translationMsg.from === "es" ? "it" : "es"
+            });
           }
 
-          // Enviar la traducción a todos los clientes en la sala excepto al emisor
+          // Enviar a todos menos al emisor
           Array.from(clientsInRoom).forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(translationMsg)); // Send as JSON
+              console.log(`[WebSocket] Enviando traducción a cliente en sala ${currentRoom}`);
+              client.send(JSON.stringify(translationMsg));
             }
           });
-        } else if (message.type === "offer" || message.type === "answer" ||
-                   message.type === "ice-candidate") {
-          if (!currentRoom || !rooms.has(currentRoom)) {
-            console.warn("[WebSocket] Cliente no está en ninguna sala");
-            return;
-          }
 
+        } else if (message.type === "offer" || message.type === "answer" || message.type === "ice-candidate") {
           const clientsInRoom = rooms.get(currentRoom)!;
-          console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
+
+          console.log(`[WebSocket] Enviando señalización ${message.type} a ${clientsInRoom.size - 1} clientes`);
 
           Array.from(clientsInRoom).forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
