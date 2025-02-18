@@ -37,6 +37,28 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
 
+  // Refs para los timers de limpieza de subtítulos
+  const localTimerRef = useRef<NodeJS.Timeout>();
+  const remoteTimerRef = useRef<NodeJS.Timeout>();
+
+  const clearTranscriptAfterDelay = (
+    isLocal: boolean,
+    delay: number = 5000
+  ) => {
+    const timerRef = isLocal ? localTimerRef : remoteTimerRef;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
+    timerRef.current = setTimeout(() => {
+      if (isLocal) {
+        setLocalTranscript("");
+      } else {
+        setRemoteTranscript("");
+      }
+    }, delay);
+  };
+
   useEffect(() => {
     const handleSpeechResult = (text: string, isLocal: boolean) => {
       console.log("[VideoCall] Recibido texto:", text, "isLocal:", isLocal);
@@ -44,22 +66,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       // Si es un mensaje local (el que hablamos)
       if (isLocal) {
         setLocalTranscript(text);
-        // No limpiamos el transcript remoto para que se puedan ver ambos mensajes
       } 
       // Si es un mensaje remoto (traducido del otro participante)
       else {
         setRemoteTranscript(text);
-        // No limpiamos el transcript local para que se puedan ver ambos mensajes
       }
 
-      // Limpiar el mensaje correspondiente después de un tiempo
-      setTimeout(() => {
-        if (isLocal) {
-          setLocalTranscript("");
-        } else {
-          setRemoteTranscript("");
-        }
-      }, 5000); // 5 segundos
+      // Programar la limpieza del mensaje correspondiente
+      clearTranscriptAfterDelay(isLocal);
     };
 
     const speech = new SpeechHandler(
@@ -161,6 +175,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     initializeCall();
 
     return () => {
+      // Limpiar los timers al desmontar
+      if (localTimerRef.current) {
+        clearTimeout(localTimerRef.current);
+      }
+      if (remoteTimerRef.current) {
+        clearTimeout(remoteTimerRef.current);
+      }
       webrtcRef.current?.close();
       speechRef.current?.stop();
     };
@@ -222,7 +243,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        {/* Mostrar subtítulos locales y remotos por separado */}
+        {/* Contenedor de subtítulos */}
         <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
           {localTranscript && (
             <Subtitles
