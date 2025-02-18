@@ -31,8 +31,8 @@ export class SpeechHandler {
           const translationMsg = message as TranslationMessage;
           // Solo procesamos mensajes del otro participante
           if (translationMsg.from !== this.language) {
-            // Mostramos solo el texto original
-            this.onTranscript(translationMsg.text);
+            // El receptor ve la traducción
+            this.onTranscript(translationMsg.translated);
           }
         }
       } catch (error) {
@@ -74,18 +74,41 @@ export class SpeechHandler {
     this.recognition.onresult = async (event: any) => {
       const text = event.results[event.results.length - 1][0].transcript;
 
-      // Para el emisor, mostramos su propio texto
+      // El emisor ve su texto original
       this.onTranscript(text);
 
-      // Enviar al otro participante
-      if (this.ws.readyState === WebSocket.OPEN) {
-        const message: TranslationMessage = {
-          type: "translation",
-          text,
-          from: this.language,
-          translated: text // Enviamos el mismo texto como traducción
-        };
-        this.ws.send(JSON.stringify(message));
+      try {
+        // Traducir antes de enviar
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            from: this.language,
+            to: this.language === "es" ? "it" : "es"
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error de traducción: ${response.status}`);
+        }
+
+        const { translated } = await response.json();
+
+        // Enviar mensaje con traducción al otro participante
+        if (this.ws.readyState === WebSocket.OPEN) {
+          const message: TranslationMessage = {
+            type: "translation",
+            text,
+            from: this.language,
+            translated
+          };
+          this.ws.send(JSON.stringify(message));
+        }
+      } catch (error) {
+        console.error("[Speech] Error:", error);
       }
     };
   }
