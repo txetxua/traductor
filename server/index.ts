@@ -6,7 +6,20 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Middleware para logging
+// CORS middleware for WebSocket
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, WS'); // Added WS method
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
+// Logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -39,10 +52,8 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
-    // Registrar rutas y obtener el servidor HTTP
     const server = await registerRoutes(app);
 
-    // Manejador de errores global
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       console.error("[Server] Error:", err);
       const status = err.status || err.statusCode || 500;
@@ -50,14 +61,12 @@ app.use((req, res, next) => {
       res.status(status).json({ message });
     });
 
-    // Configurar Vite en desarrollo o servir estáticos en producción
     if (app.get("env") === "development") {
       await setupVite(app, server);
     } else {
       serveStatic(app);
     }
 
-    // Iniciar el servidor en el puerto 5000
     const PORT = 5000;
     server.listen(PORT, "0.0.0.0", () => {
       log(`Server running on port ${PORT}`);

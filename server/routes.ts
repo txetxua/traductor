@@ -26,11 +26,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   const rooms = new Map<string, Set<WebSocket>>();
 
-  // Inicializar WebSocket Server con configuración específica
   const wss = new WebSocketServer({ 
     server: httpServer,
     path: '/ws',
-    perMessageDeflate: false // Deshabilitar compresión para reducir latencia
+    clientTracking: true,
+    perMessageDeflate: false
   });
 
   wss.on("error", (error) => {
@@ -40,13 +40,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   console.log("[WebSocket] Server initialized on /ws");
 
   wss.on("connection", (ws, req) => {
-    console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
+    // Log detailed connection information
+    console.log("[WebSocket] New connection details:", {
+      headers: req.headers,
+      url: req.url,
+      remoteAddress: req.socket.remoteAddress
+    });
+
+    ws.on("error", (error) => {
+      console.error("[WebSocket] Client error:", error);
+    });
+
     let currentRoom: string | null = null;
+    let pingInterval: NodeJS.Timeout;
+
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.ping();
+      }
+    }, 30000);
+
+    ws.on("pong", () => {
+      console.log("[WebSocket] Client is alive");
+    });
 
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Message received:", message.type);
+        console.log("[WebSocket] Message received:", message);
 
         if (message.type === "join") {
           if (!message.roomId) {
@@ -54,7 +75,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
 
-          // Limpiar sala anterior si existe
           if (currentRoom) {
             const oldRoom = rooms.get(currentRoom);
             if (oldRoom) {
@@ -65,7 +85,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
-          // Crear o unirse a la sala
           if (!rooms.has(message.roomId)) {
             rooms.set(message.roomId, new Set());
           }
@@ -76,16 +95,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
 
-          try {
-            const response: WebSocketMessage = { 
-              type: "joined", 
-              roomId: message.roomId,
-              clients: roomClients.size 
-            };
-            ws.send(JSON.stringify(response));
-          } catch (err) {
-            console.error("[WebSocket] Error sending join confirmation:", err);
-          }
+          ws.send(JSON.stringify({ 
+            type: "joined", 
+            roomId: message.roomId,
+            clients: roomClients.size 
+          }));
           return;
         }
 
@@ -94,7 +108,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
-        // Manejar mensajes de señalización WebRTC
         if (["offer", "answer", "ice-candidate"].includes(message.type)) {
           const roomClients = rooms.get(currentRoom);
           if (!roomClients) {
@@ -102,30 +115,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
 
-          for (const client of roomClients) {
+          roomClients.forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
-              try {
-                client.send(JSON.stringify(message));
-              } catch (err) {
-                console.error("[WebSocket] Error forwarding message:", err);
-              }
+              client.send(JSON.stringify(message));
             }
-          }
+          });
         }
 
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
         if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
-          } catch (err) {
-            console.error("[WebSocket] Error sending error message:", err);
-          }
+          ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
         }
       }
     });
 
     ws.on("close", () => {
+      clearInterval(pingInterval);
+
       if (currentRoom) {
         const roomClients = rooms.get(currentRoom);
         if (roomClients) {
@@ -137,20 +144,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
     });
-
-    ws.on("error", (error) => {
-      console.error("[WebSocket] Connection error:", error);
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify({ type: "error", error: "WebSocket error occurred" }));
-        } catch (err) {
-          console.error("[WebSocket] Error sending error message:", err);
-        }
-      }
-    });
   });
 
-  // Endpoint SSE para traducciones en tiempo real
   app.get("/api/translations/stream/:roomId", (req, res) => {
     const roomId = req.params.roomId;
     const language = req.query.language as string;
@@ -192,7 +187,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Endpoint para solicitar traducciones
   app.post("/api/translate", async (req, res) => {
     try {
       const result = translateSchema.safeParse(req.body);
@@ -216,13 +210,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
-        for (const client of roomClients) {
-          try {
-            client.res.write(`data: ${JSON.stringify(message)}\n\n`);
-          } catch (error) {
-            console.error("[Translate] Error sending translation:", error);
-          }
-        }
+        roomClients.forEach(client => {
+          client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+        });
       }
 
       res.json({ translated });
