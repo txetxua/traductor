@@ -5,6 +5,11 @@ type ErrorCallback = (error: Error) => void;
 
 export class TranslationHandler {
   private eventSource: EventSource | null = null;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private isConnected: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private reconnectDelay: number = 2000;
 
   constructor(
     private roomId: string,
@@ -17,20 +22,30 @@ export class TranslationHandler {
   }
 
   private getApiBaseUrl() {
-    // En desarrollo, usa el mismo host y puerto que el servidor Express
-    const host = window.location.host.includes('localhost') || window.location.host.includes('.repl.co')
-      ? window.location.host
-      : window.location.host.replace('5173', '5000');
-    return `${window.location.protocol}//${host}`;
+    return window.location.origin;
   }
 
   private connect() {
     try {
+      if (this.eventSource?.readyState === EventSource.OPEN) {
+        console.log("[Translations] Connection already active");
+        return;
+      }
+
+      // Cleanup existing connection if any
+      this.cleanup();
+
       const baseUrl = this.getApiBaseUrl();
       const url = `${baseUrl}/api/translations/stream/${this.roomId}?language=${this.language}`;
       console.log("[Translations] Connecting to SSE:", url);
 
       this.eventSource = new EventSource(url);
+
+      this.eventSource.onopen = () => {
+        console.log("[Translations] Connection established");
+        this.isConnected = true;
+        this.reconnectAttempts = 0;
+      };
 
       this.eventSource.onmessage = (event) => {
         try {
@@ -49,8 +64,22 @@ export class TranslationHandler {
 
       this.eventSource.onerror = () => {
         console.error("[Translations] SSE connection error");
-        this.onError?.(new Error("SSE connection error"));
+        this.isConnected = false;
+
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          if (!this.reconnectTimeout) {
+            this.reconnectTimeout = setTimeout(() => {
+              this.reconnectTimeout = null;
+              this.reconnectAttempts++;
+              console.log(`[Translations] Attempting reconnection (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+              this.connect();
+            }, this.reconnectDelay);
+          }
+        } else {
+          this.onError?.(new Error("Failed to establish SSE connection after maximum attempts"));
+        }
       };
+
     } catch (error) {
       console.error("[Translations] Error connecting:", error);
       this.onError?.(error as Error);
@@ -88,11 +117,23 @@ export class TranslationHandler {
     }
   }
 
-  stop() {
+  private cleanup() {
     if (this.eventSource) {
-      console.log("[Translations] Closing SSE connection");
+      console.log("[Translations] Cleaning up existing connection");
       this.eventSource.close();
       this.eventSource = null;
     }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    this.isConnected = false;
+  }
+
+  stop() {
+    console.log("[Translations] Stopping translation handler");
+    this.cleanup();
   }
 }

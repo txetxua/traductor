@@ -7,20 +7,22 @@ export class WebSocketHandler {
   private messageHandlers: Map<string, MessageHandler> = new Map();
   private isConnected: boolean = false;
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private pendingMessages: any[] = [];
 
   constructor(
     private roomId: string,
     private onError?: (error: Error) => void
   ) {
-    console.log("[WebSocket] Starting for room:", roomId);
+    if (!roomId) {
+      throw new Error("[WebSocket] Room ID is required");
+    }
+    console.log("[WebSocket] Initializing for room:", roomId);
+    this.connect();
   }
 
   private getWebSocketUrl() {
-    // En desarrollo, usa el mismo host y puerto que el servidor Express
-    const host = window.location.host.includes('localhost') || window.location.host.includes('.repl.co') 
-      ? window.location.host 
-      : window.location.host.replace('5173', '5000');
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
     const wsUrl = `${protocol}//${host}/ws`;
     console.log("[WebSocket] Using WebSocket URL:", wsUrl);
     return wsUrl;
@@ -39,16 +41,24 @@ export class WebSocketHandler {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log("[WebSocket] Connected successfully");
+        console.log("[WebSocket] Connection established, sending join message");
         this.isConnected = true;
-        if (this.roomId) {
-          console.log("[WebSocket] Joining room:", this.roomId);
-          this.send({ type: "join", roomId: this.roomId });
+
+        // Immediately send join message after connection
+        this.send({ 
+          type: "join", 
+          roomId: this.roomId 
+        });
+
+        // Process any pending messages
+        while (this.pendingMessages.length > 0) {
+          const message = this.pendingMessages.shift();
+          this.send(message);
         }
       };
 
-      this.ws.onclose = () => {
-        console.log("[WebSocket] Connection closed");
+      this.ws.onclose = (event) => {
+        console.log("[WebSocket] Connection closed", event);
         this.isConnected = false;
         if (!this.reconnectTimeout) {
           this.reconnectTimeout = setTimeout(() => {
@@ -77,6 +87,10 @@ export class WebSocketHandler {
             return;
           }
 
+          if (message.type === "joined") {
+            console.log("[WebSocket] Successfully joined room:", message.roomId);
+          }
+
           const handler = this.messageHandlers.get(message.type);
           if (handler) {
             handler(message);
@@ -97,7 +111,8 @@ export class WebSocketHandler {
 
   public send(message: any) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error("[WebSocket] Cannot send message, connection not open");
+      console.log("[WebSocket] Connection not ready, queuing message:", message);
+      this.pendingMessages.push(message);
       return;
     }
 
@@ -136,5 +151,6 @@ export class WebSocketHandler {
       }
     }
     this.ws = null;
+    this.pendingMessages = [];
   }
 }

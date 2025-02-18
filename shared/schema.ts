@@ -39,11 +39,19 @@ export type InsertTranslation = z.infer<typeof insertTranslationSchema>;
 export type Translation = typeof translations.$inferSelect;
 export type Language = "es" | "it";
 
+export type WebSocketMessage = {
+  type: "join" | "joined" | "error";
+  roomId?: string;
+  error?: string;
+  clients?: number;
+};
+
 export type TranslationMessage = {
   type: "translation";
   text: string;
   from: Language;
   translated: string;
+  to: Language;
 };
 
 export type SignalingMessage = {

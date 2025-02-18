@@ -3,13 +3,18 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { callStorage } from "./storage";
 import { z } from "zod";
-import { insertCallSchema, type SignalingMessage, type TranslationMessage } from "@shared/schema";
+import { 
+  insertCallSchema, 
+  type WebSocketMessage, 
+  type SignalingMessage, 
+  type TranslationMessage 
+} from "@shared/schema";
 
-// Translation schemas and dictionaries remain unchanged
 const translateSchema = z.object({
   text: z.string(),
   from: z.enum(["es", "it"]),
-  to: z.enum(["es", "it"])
+  to: z.enum(["es", "it"]),
+  roomId: z.string()
 });
 
 const translations = {
@@ -45,13 +50,12 @@ const translateText = (text: string, from: string, to: string): string => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Simplified SSE clients management
   const sseClients = new Map<string, Set<{
-    send: (data: string) => void;
+    res: any;
     language: string;
+    keepAliveInterval?: NodeJS.Timeout;
   }>>();
 
-  // Simplified SSE endpoint
   app.get("/api/translations/stream/:roomId", (req, res) => {
     const roomId = req.params.roomId;
     const language = req.query.language as string;
@@ -66,57 +70,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*"
     });
 
-    const client = {
-      send: (data: string) => res.write(`data: ${data}\n\n`),
-      language
-    };
+    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+
+    const keepAliveInterval = setInterval(() => {
+      res.write(": keepalive\n\n");
+    }, 30000);
 
     if (!sseClients.has(roomId)) {
       sseClients.set(roomId, new Set());
     }
+    const client = { res, language, keepAliveInterval };
     sseClients.get(roomId)!.add(client);
 
     req.on("close", () => {
       console.log(`[SSE] Client disconnected from room ${roomId}`);
-      sseClients.get(roomId)?.delete(client);
-      if (sseClients.get(roomId)?.size === 0) {
-        sseClients.delete(roomId);
+      clearInterval(keepAliveInterval);
+      const roomClients = sseClients.get(roomId);
+      if (roomClients) {
+        roomClients.delete(client);
+        if (roomClients.size === 0) {
+          sseClients.delete(roomId);
+        }
+      }
+    });
+
+    req.on("error", (error) => {
+      console.error(`[SSE] Error in room ${roomId}:`, error);
+      clearInterval(keepAliveInterval);
+      const roomClients = sseClients.get(roomId);
+      if (roomClients) {
+        roomClients.delete(client);
+        if (roomClients.size === 0) {
+          sseClients.delete(roomId);
+        }
       }
     });
   });
 
-  // Simplified translation endpoint
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
-    const result = translateSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ error: "Invalid translation request" });
-    }
-
     try {
-      const { text, from, to } = result.data;
+      const result = translateSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: "Invalid translation request" });
+      }
+
+      const { text, from, to, roomId } = result.data;
       const translated = translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
-      // Broadcast translation to clients in the room
-      const roomId = req.body.roomId;
       const roomClients = sseClients.get(roomId);
 
       if (roomClients) {
-        const message = JSON.stringify({
+        const message: TranslationMessage = {
           type: "translation",
           text,
           translated,
           from,
           to
-        });
+        };
 
         roomClients.forEach(client => {
           if (client.language === to) {
-            client.send(message);
+            try {
+              client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+            } catch (error) {
+              console.error(`[Translate] Error sending to client:`, error);
+            }
           }
         });
       }
@@ -129,11 +153,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+
   const wss = new WebSocketServer({
     server: httpServer,
-    path: "/ws",
-    clientTracking: true,
-    perMessageDeflate: false
+    path: "/ws"
   });
 
   console.log("[WebSocket] Server initialized on /ws");
@@ -141,56 +164,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const rooms = new Map<string, Set<WebSocket>>();
 
   wss.on("connection", (ws, req) => {
-    console.log("[WebSocket] New connection established from:", req.socket.remoteAddress);
-    console.log("[WebSocket] Headers:", req.headers);
-
+    console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
     let currentRoom: string | null = null;
 
-    ws.on("message", (data) => {
+    const sendMessage = (message: WebSocketMessage | SignalingMessage) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify(message));
+        } catch (err) {
+          console.error("[WebSocket] Error sending message:", err);
+        }
+      }
+    };
+
+    const handleJoin = (roomId: string) => {
+      if (!rooms.has(roomId)) {
+        console.log("[WebSocket] Creating new room:", roomId);
+        rooms.set(roomId, new Set());
+      }
+
+      const roomClients = rooms.get(roomId)!;
+      roomClients.add(ws);
+      currentRoom = roomId;
+
+      console.log(`[WebSocket] Client joined room ${roomId}, total clients: ${roomClients.size}`);
+      sendMessage({ type: "joined", roomId, clients: roomClients.size });
+    };
+
+    ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
         console.log("[WebSocket] Message received:", message);
 
-        if (message.type === "join" && message.roomId) {
-          currentRoom = message.roomId;
-
-          if (!rooms.has(currentRoom)) {
-            rooms.set(currentRoom, new Set());
+        if (message.type === "join") {
+          if (!message.roomId) {
+            sendMessage({ type: "error", error: "Room ID is required" });
+            return;
           }
-
-          const roomClients = rooms.get(currentRoom)!;
-          roomClients.add(ws);
-          console.log(`[WebSocket] Client joined room ${currentRoom}, total clients: ${roomClients.size}`);
-          ws.send(JSON.stringify({ type: "joined", roomId: currentRoom }));
+          handleJoin(message.roomId);
           return;
         }
 
-        // Only handle signaling messages if client is in a room
         if (!currentRoom) {
-          console.log("[WebSocket] Received message without room assignment");
-          ws.send(JSON.stringify({ 
-            type: "error", 
-            error: "Not in a room. Please join a room first." 
-          }));
+          sendMessage({ type: "error", error: "Not in a room" });
           return;
         }
 
-        // Forward signaling messages to other clients in the room
         if (["offer", "answer", "ice-candidate"].includes(message.type)) {
           const roomClients = rooms.get(currentRoom)!;
-          console.log(`[WebSocket] Broadcasting ${message.type} to ${roomClients.size - 1} other clients in room ${currentRoom}`);
+          console.log(`[WebSocket] Broadcasting ${message.type} in room ${currentRoom}`);
+
           roomClients.forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(data.toString());
+              try {
+                client.send(JSON.stringify(message));
+              } catch (err) {
+                console.error("[WebSocket] Error broadcasting message:", err);
+              }
             }
           });
         }
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
-        ws.send(JSON.stringify({ 
-          type: "error", 
-          error: "Invalid message format" 
-        }));
+        sendMessage({ type: "error", error: "Invalid message format" });
       }
     });
 
@@ -199,8 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const roomClients = rooms.get(currentRoom);
         if (roomClients) {
           roomClients.delete(ws);
-          console.log(`[WebSocket] Client left room ${currentRoom}, remaining clients: ${roomClients.size}`);
-
+          console.log(`[WebSocket] Client left room ${currentRoom}, remaining: ${roomClients.size}`);
           if (roomClients.size === 0) {
             console.log(`[WebSocket] Removing empty room ${currentRoom}`);
             rooms.delete(currentRoom);
@@ -211,10 +246,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     ws.on("error", (error) => {
       console.error("[WebSocket] Connection error:", error);
+      sendMessage({ type: "error", error: "WebSocket error occurred" });
     });
-
-    // Send initial connection acknowledgment
-    ws.send(JSON.stringify({ type: "connected" }));
   });
 
   return httpServer;
