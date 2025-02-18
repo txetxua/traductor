@@ -21,10 +21,10 @@ export default function Subtitles({ transcript, config }: Props) {
     padding: "8px 12px",
     borderRadius: "4px",
     lineHeight: "1.5",
-    whiteSpace: "pre-wrap", // Preservar saltos de línea
-    wordBreak: "break-word", // Evitar desbordamiento
-    zIndex: 50 // Asegurar que los subtítulos estén siempre visibles
-  };
+    whiteSpace: "pre-wrap",
+    wordWrap: "break-word",
+    zIndex: 50
+  } as const;
 
   return (
     <div 

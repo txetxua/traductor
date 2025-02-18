@@ -32,7 +32,6 @@ export class TranslationHandler {
         return;
       }
 
-      // Cleanup existing connection if any
       this.cleanup();
 
       const baseUrl = this.getApiBaseUrl();
@@ -53,17 +52,13 @@ export class TranslationHandler {
           console.log("[Translations] Message received:", message);
 
           if (message.type === "translation") {
-            // Verificar que el idioma de destino coincida con nuestro idioma
+            // Solo mostrar la traducción si está destinada a nuestro idioma
             if (message.to === this.language) {
-              console.log("[Translations] Showing translation:", message.translated);
+              console.log("[Translations] Showing translation in", this.language, ":", message.translated);
               this.onTranslation(message.translated, false);
             } else {
               console.log("[Translations] Ignoring translation for different language:", message.to);
             }
-          } else if (message.type === "connected") {
-            console.log("[Translations] SSE connection confirmed");
-          } else {
-            console.log("[Translations] Unknown message type:", message.type);
           }
         } catch (error) {
           console.error("[Translations] Error processing message:", error);
@@ -105,7 +100,13 @@ export class TranslationHandler {
 
     try {
       const baseUrl = this.getApiBaseUrl();
-      console.log("[Translations] Translating text:", text);
+      console.log("[Translations] Original text:", text, "in language:", this.language);
+
+      // Mostrar el texto original localmente
+      this.onTranslation(text, true);
+
+      // Determinar el idioma de destino (opuesto al idioma actual)
+      const targetLanguage: Language = this.language === "es" ? "it" : "es";
 
       const response = await fetch(`${baseUrl}/api/translate`, {
         method: "POST",
@@ -113,7 +114,7 @@ export class TranslationHandler {
         body: JSON.stringify({
           text,
           from: this.language,
-          to: this.language === "es" ? "it" : "es",
+          to: targetLanguage,
           roomId: this.roomId
         })
       });
@@ -123,10 +124,7 @@ export class TranslationHandler {
       }
 
       const data = await response.json();
-      console.log("[Translations] Translation response:", data);
-
-      // Mostrar el texto original localmente
-      this.onTranslation(text, true);
+      console.log("[Translations] Translation sent successfully:", data);
     } catch (error) {
       console.error("[Translations] Error:", error);
       this.onError?.(error as Error);

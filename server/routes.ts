@@ -22,7 +22,7 @@ const translations = {
   "es": {
     "hola": "ciao",
     "buenos días": "buongiorno",
-    "gracias": "grazie",
+    "gracias": "gracias",
     "por favor": "per favore",
     "sí": "sì",
     "no": "no",
@@ -62,11 +62,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Configurar servidor HTTP
   const httpServer = createServer(app);
 
-  // Configurar WebSocket Server
+  // Configurar WebSocket Server con opciones específicas
   const wss = new WebSocketServer({ 
     server: httpServer,
     path: '/ws',
-    perMessageDeflate: false
+    perMessageDeflate: false,
+    handleProtocols: (protocols, request) => {
+      console.log("[WebSocket] Client requested protocols:", protocols);
+      return protocols?.includes('translation-protocol') ? 'translation-protocol' : false;
+    },
+    verifyClient: (info, callback) => {
+      // Verificar que la conexión viene con los headers necesarios
+      const protocol = info.req.headers['sec-websocket-protocol'];
+      console.log("[WebSocket] Client headers:", info.req.headers);
+      console.log("[WebSocket] Protocol received:", protocol);
+
+      if (!protocol || !protocol.includes('translation-protocol')) {
+        console.log("[WebSocket] Protocol verification failed");
+        callback(false, 400, 'Protocol not supported');
+        return;
+      }
+      console.log("[WebSocket] Protocol verification successful");
+      callback(true);
+    }
   });
 
   console.log("[WebSocket] Server initialized on /ws");
@@ -77,6 +95,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const language = req.query.language as string;
 
     if (!roomId || !language || !["es", "it"].includes(language)) {
+      console.log("[SSE] Invalid request:", { roomId, language });
       res.status(400).json({ error: "Invalid room ID or language" });
       return;
     }
@@ -128,11 +147,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { text, from, to, roomId } = result.data;
+      console.log(`[Translate] Processing translation from ${from} to ${to} in room ${roomId}`);
+
+      // Realizar la traducción
       const translated = translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
+      // Buscar clientes en la sala
       const roomClients = sseClients.get(roomId);
-      console.log(`[Translate] Room clients for ${roomId}:`, roomClients?.size);
+      console.log(`[Translate] Room ${roomId} has ${roomClients?.size || 0} clients`);
 
       if (roomClients) {
         const message: TranslationMessage = {
@@ -145,6 +168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         let sentToSomeone = false;
         roomClients.forEach(client => {
+          // Solo enviar la traducción a los clientes que hablan el idioma de destino
           if (client.language === to) {
             try {
               console.log(`[Translate] Sending translation to client with language ${client.language}`);
@@ -153,6 +177,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             } catch (error) {
               console.error(`[Translate] Error sending to client:`, error);
             }
+          } else {
+            console.log(`[Translate] Skipping client with language ${client.language} (not target language ${to})`);
           }
         });
 

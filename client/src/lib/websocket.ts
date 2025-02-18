@@ -28,7 +28,7 @@ export class WebSocketHandler {
     return wsUrl;
   }
 
-  public connect() {
+  private connect() {
     try {
       if (this.ws?.readyState === WebSocket.OPEN) {
         console.log("[WebSocket] Connection already active");
@@ -37,20 +37,21 @@ export class WebSocketHandler {
 
       const wsUrl = this.getWebSocketUrl();
       console.log("[WebSocket] Connecting to:", wsUrl);
+      console.log("[WebSocket] Using protocol: translation-protocol");
 
-      this.ws = new WebSocket(wsUrl);
+      this.ws = new WebSocket(wsUrl, ['translation-protocol']);
 
       this.ws.onopen = () => {
-        console.log("[WebSocket] Connection established, sending join message");
+        console.log("[WebSocket] Connection established");
         this.isConnected = true;
 
-        // Immediately send join message after connection
+        // Enviar mensaje de unión inmediatamente después de la conexión
         this.send({ 
           type: "join", 
           roomId: this.roomId 
         });
 
-        // Process any pending messages
+        // Procesar mensajes pendientes
         while (this.pendingMessages.length > 0) {
           const message = this.pendingMessages.shift();
           this.send(message);
@@ -58,22 +59,30 @@ export class WebSocketHandler {
       };
 
       this.ws.onclose = (event) => {
-        console.log("[WebSocket] Connection closed", event);
+        console.log("[WebSocket] Connection closed. Code:", event.code, "Reason:", event.reason);
         this.isConnected = false;
-        if (!this.reconnectTimeout) {
-          this.reconnectTimeout = setTimeout(() => {
-            this.reconnectTimeout = null;
-            if (!this.isConnected) {
-              console.log("[WebSocket] Attempting to reconnect...");
-              this.connect();
-            }
-          }, 2000);
+
+        // No reconectar si el cierre fue limpio (1000) o por protocolo no soportado (1002)
+        if (event.code !== 1000 && event.code !== 1002) {
+          if (!this.reconnectTimeout) {
+            console.log("[WebSocket] Scheduling reconnection attempt...");
+            this.reconnectTimeout = setTimeout(() => {
+              this.reconnectTimeout = null;
+              if (!this.isConnected) {
+                console.log("[WebSocket] Attempting to reconnect...");
+                this.connect();
+              }
+            }, 2000);
+          }
+        } else {
+          console.log("[WebSocket] Clean disconnect or protocol error, not attempting to reconnect");
         }
       };
 
       this.ws.onerror = (event) => {
-        console.error("[WebSocket] Connection error:", event);
-        this.onError?.(new Error("WebSocket connection error"));
+        const errorMsg = event instanceof ErrorEvent ? event.message : "Unknown WebSocket error";
+        console.error("[WebSocket] Connection error:", errorMsg);
+        this.onError?.(new Error(`WebSocket connection error: ${errorMsg}`));
       };
 
       this.ws.onmessage = (event) => {
