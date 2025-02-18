@@ -1,9 +1,10 @@
 import { type SignalingMessage } from "@shared/schema";
+import { WebSocketHandler } from "./websocket";
 
 export class WebRTCConnection {
   private pc!: RTCPeerConnection;
   private stream?: MediaStream;
-  private ws!: WebSocket;
+  private ws: WebSocketHandler;
 
   constructor(
     private roomId: string,
@@ -13,68 +14,52 @@ export class WebRTCConnection {
   ) {
     console.log("[WebRTC] Initializing for room:", roomId);
     this.initializePeerConnection();
-    this.initializeWebSocket();
-  }
 
-  private initializeWebSocket() {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-    console.log("[WebRTC] Connecting to WebSocket:", wsUrl);
-    this.ws = new WebSocket(wsUrl);
-
-    this.ws.onopen = () => {
-      console.log("[WebRTC] WebSocket connected");
-      this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
-    };
-
-    this.ws.onclose = () => {
-      console.log("[WebRTC] WebSocket closed");
-      this.onError(new Error("WebSocket connection closed"));
-    };
-
-    this.ws.onerror = (error) => {
+    // Inicializar WebSocket con manejo asíncrono
+    this.ws = new WebSocketHandler(roomId, (error) => {
       console.error("[WebRTC] WebSocket error:", error);
-      this.onError(new Error("WebSocket connection error"));
-    };
+      this.onError(error);
+    });
 
-    this.ws.onmessage = this.handleWebSocketMessage.bind(this);
+    // Configurar handlers de mensajes WebSocket
+    this.setupWebSocketHandlers();
   }
 
-  private async handleWebSocketMessage(event: MessageEvent) {
-    try {
-      const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Message received:", message.type);
-
-      switch (message.type) {
-        case "offer":
-          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-          const answer = await this.pc.createAnswer();
-          await this.pc.setLocalDescription(answer);
-          this.sendSignaling({
-            type: "answer",
-            payload: answer
-          });
-          break;
-
-        case "answer":
-          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-          break;
-
-        case "ice-candidate":
-          if (message.payload) {
-            try {
-              await this.pc.addIceCandidate(message.payload);
-            } catch (err) {
-              console.error("[WebRTC] Error adding ICE candidate:", err);
-            }
-          }
-          break;
+  private setupWebSocketHandlers() {
+    this.ws.onMessage("offer", async (message) => {
+      try {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        await this.ws.send({
+          type: "answer",
+          payload: answer
+        });
+      } catch (err) {
+        console.error("[WebRTC] Error handling offer:", err);
+        this.onError(err as Error);
       }
-    } catch (err) {
-      console.error("[WebRTC] Error processing message:", err);
-      this.onError(err as Error);
-    }
+    });
+
+    this.ws.onMessage("answer", async (message) => {
+      try {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+      } catch (err) {
+        console.error("[WebRTC] Error handling answer:", err);
+        this.onError(err as Error);
+      }
+    });
+
+    this.ws.onMessage("ice-candidate", async (message) => {
+      if (message.payload) {
+        try {
+          await this.pc.addIceCandidate(message.payload);
+        } catch (err) {
+          console.error("[WebRTC] Error adding ICE candidate:", err);
+          this.onError(err as Error);
+        }
+      }
+    });
   }
 
   private initializePeerConnection() {
@@ -87,12 +72,17 @@ export class WebRTCConnection {
 
     this.pc = new RTCPeerConnection(configuration);
 
-    this.pc.onicecandidate = ({ candidate }) => {
+    this.pc.onicecandidate = async ({ candidate }) => {
       if (candidate) {
-        this.sendSignaling({
-          type: "ice-candidate",
-          payload: candidate
-        });
+        try {
+          await this.ws.send({
+            type: "ice-candidate",
+            payload: candidate
+          });
+        } catch (err) {
+          console.error("[WebRTC] Error sending ICE candidate:", err);
+          this.onError(err as Error);
+        }
       }
     };
 
@@ -117,7 +107,7 @@ export class WebRTCConnection {
       try {
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
-        this.sendSignaling({
+        await this.ws.send({
           type: "offer",
           payload: offer
         });
@@ -126,21 +116,6 @@ export class WebRTCConnection {
         this.onError(err as Error);
       }
     };
-  }
-
-  private sendSignaling(message: SignalingMessage) {
-    if (this.ws.readyState === WebSocket.OPEN) {
-      try {
-        console.log("[WebRTC] Sending message:", message.type);
-        this.ws.send(JSON.stringify(message));
-      } catch (err) {
-        console.error("[WebRTC] Error sending message:", err);
-        this.onError(err as Error);
-      }
-    } else {
-      console.error("[WebRTC] WebSocket not open");
-      this.onError(new Error("WebSocket not connected"));
-    }
   }
 
   async start(stream: MediaStream) {
@@ -166,8 +141,6 @@ export class WebRTCConnection {
     console.log("[WebRTC] Closing connection");
     this.stream?.getTracks().forEach(track => track.stop());
     this.pc.close();
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close();
-    }
+    this.ws.close();
   }
 }

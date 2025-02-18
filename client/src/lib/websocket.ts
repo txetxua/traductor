@@ -10,6 +10,9 @@ export class WebSocketHandler {
   private maxRetries = 5;
   private retryCount = 0;
   private retryDelay = 1000;
+  private connectionPromise: Promise<void> | null = null;
+  private connectionResolve: (() => void) | null = null;
+  private connectionReject: ((error: Error) => void) | null = null;
 
   constructor(
     private roomId: string,
@@ -21,87 +24,117 @@ export class WebSocketHandler {
 
   private getWebSocketUrl(): string {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws`;
     console.log("[WebSocket] Using URL:", wsUrl);
     return wsUrl;
   }
 
-  private connect() {
-    try {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        console.log("[WebSocket] Already connected");
-        return;
-      }
-
-      // Cleanup existing connection if any
-      if (this.ws) {
-        this.ws.close();
-        this.ws = null;
-      }
-
-      const wsUrl = this.getWebSocketUrl();
-      console.log("[WebSocket] Connecting to:", wsUrl);
-
-      this.ws = new WebSocket(wsUrl);
-
-      // Set a timeout for the connection attempt
-      const connectionTimeout = setTimeout(() => {
-        if (this.ws?.readyState !== WebSocket.OPEN) {
-          console.log("[WebSocket] Connection timeout");
-          this.ws?.close();
-          this.handleReconnect();
-        }
-      }, 5000);
-
-      this.ws.onopen = () => {
-        clearTimeout(connectionTimeout);
-        console.log("[WebSocket] Connected successfully");
-        this.isConnected = true;
-        this.retryCount = 0;
-        this.retryDelay = 1000;
-
-        // Join room immediately after connection
-        this.send({ type: "join", roomId: this.roomId });
-      };
-
-      this.ws.onclose = (event) => {
-        clearTimeout(connectionTimeout);
-        console.log("[WebSocket] Connection closed:", event.code, event.reason);
-        this.isConnected = false;
-        this.handleReconnect();
-      };
-
-      this.ws.onerror = (event) => {
-        console.error("[WebSocket] Error occurred:", event);
-        // No cerramos la conexión aquí, dejamos que onclose se encargue
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          console.log("[WebSocket] Message received:", message.type);
-
-          if (message.error) {
-            console.error("[WebSocket] Server error:", message.error);
-            this.onError?.(new Error(message.error));
-            return;
-          }
-
-          const handler = this.messageHandlers.get(message.type);
-          if (handler) {
-            handler(message);
-          }
-        } catch (error) {
-          console.error("[WebSocket] Error processing message:", error);
-          this.onError?.(error as Error);
-        }
-      };
-
-    } catch (error) {
-      console.error("[WebSocket] Setup error:", error);
-      this.onError?.(error as Error);
-      this.handleReconnect();
+  private connect(): Promise<void> {
+    if (this.connectionPromise) {
+      return this.connectionPromise;
     }
+
+    this.connectionPromise = new Promise((resolve, reject) => {
+      this.connectionResolve = resolve;
+      this.connectionReject = reject;
+
+      try {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          console.log("[WebSocket] Already connected");
+          this.connectionResolve();
+          return;
+        }
+
+        // Limpiar conexión existente
+        if (this.ws) {
+          this.ws.close();
+          this.ws = null;
+        }
+
+        const wsUrl = this.getWebSocketUrl();
+        console.log("[WebSocket] Connecting to:", wsUrl);
+
+        this.ws = new WebSocket(wsUrl);
+
+        // Timeout para la conexión
+        const connectionTimeout = setTimeout(() => {
+          if (this.ws?.readyState !== WebSocket.OPEN) {
+            console.log("[WebSocket] Connection timeout");
+            this.ws?.close();
+            this.handleReconnect();
+          }
+        }, 5000);
+
+        this.ws.onopen = () => {
+          clearTimeout(connectionTimeout);
+          console.log("[WebSocket] Connected successfully");
+          this.isConnected = true;
+          this.retryCount = 0;
+          this.retryDelay = 1000;
+
+          // Unirse a la sala inmediatamente después de conectar
+          this.send({ type: "join", roomId: this.roomId })
+            .then(() => {
+              if (this.connectionResolve) {
+                this.connectionResolve();
+              }
+            })
+            .catch((error) => {
+              if (this.connectionReject) {
+                this.connectionReject(error);
+              }
+            });
+        };
+
+        this.ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+          console.log("[WebSocket] Connection closed:", event.code, event.reason);
+          this.isConnected = false;
+          this.handleReconnect();
+        };
+
+        this.ws.onerror = (event) => {
+          console.error("[WebSocket] Error occurred:", event);
+          const error = new Error("WebSocket connection error");
+          if (this.connectionReject) {
+            this.connectionReject(error);
+          }
+          this.onError?.(error);
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            console.log("[WebSocket] Message received:", message.type);
+
+            if (message.error) {
+              console.error("[WebSocket] Server error:", message.error);
+              this.onError?.(new Error(message.error));
+              return;
+            }
+
+            const handler = this.messageHandlers.get(message.type);
+            if (handler) {
+              handler(message);
+            }
+          } catch (error) {
+            console.error("[WebSocket] Error processing message:", error);
+            this.onError?.(error as Error);
+          }
+        };
+
+      } catch (error) {
+        console.error("[WebSocket] Setup error:", error);
+        if (this.connectionReject) {
+          this.connectionReject(error as Error);
+        }
+        this.onError?.(error as Error);
+        this.handleReconnect();
+      }
+    });
+
+    return this.connectionPromise;
   }
 
   private handleReconnect() {
@@ -115,10 +148,11 @@ export class WebSocketHandler {
 
       this.reconnectTimer = window.setTimeout(() => {
         this.reconnectTimer = null;
+        this.connectionPromise = null;
         this.connect();
       }, this.retryDelay);
 
-      // Exponential backoff with max delay of 10 seconds
+      // Exponential backoff con máximo de 10 segundos
       this.retryDelay = Math.min(this.retryDelay * 2, 10000);
     } else {
       console.error("[WebSocket] Max reconnection attempts reached");
@@ -126,21 +160,21 @@ export class WebSocketHandler {
     }
   }
 
-  public send(message: any) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      const error = new Error("Cannot send message - WebSocket not connected");
-      console.error("[WebSocket]", error);
-      this.onError?.(error);
-      return;
-    }
-
+  public async send(message: any): Promise<void> {
     try {
+      await this.connect();
+
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        throw new Error("Cannot send message - WebSocket not connected");
+      }
+
       const messageStr = JSON.stringify(message);
       console.log("[WebSocket] Sending:", message.type);
       this.ws.send(messageStr);
     } catch (error) {
       console.error("[WebSocket] Send error:", error);
       this.onError?.(error as Error);
+      throw error;
     }
   }
 
@@ -169,5 +203,6 @@ export class WebSocketHandler {
 
     this.isConnected = false;
     this.messageHandlers.clear();
+    this.connectionPromise = null;
   }
 }

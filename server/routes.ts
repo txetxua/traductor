@@ -26,23 +26,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   const rooms = new Map<string, Set<WebSocket>>();
 
-  // Inicializar WebSocket Server con path específico
+  // Inicializar WebSocket Server con configuración específica
   const wss = new WebSocketServer({ 
     server: httpServer,
     path: '/ws',
-    clientTracking: true
+    perMessageDeflate: false // Deshabilitar compresión para reducir latencia
+  });
+
+  wss.on("error", (error) => {
+    console.error("[WebSocket Server] Error:", error);
   });
 
   console.log("[WebSocket] Server initialized on /ws");
 
-  wss.on("connection", (ws) => {
-    console.log("[WebSocket] New connection established");
+  wss.on("connection", (ws, req) => {
+    console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
     let currentRoom: string | null = null;
 
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Message received:", message);
+        console.log("[WebSocket] Message received:", message.type);
 
         if (message.type === "join") {
           if (!message.roomId) {
@@ -50,7 +54,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
 
-          // Si ya estaba en una sala, eliminarlo
+          // Limpiar sala anterior si existe
           if (currentRoom) {
             const oldRoom = rooms.get(currentRoom);
             if (oldRoom) {
@@ -61,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
-          // Unir a la nueva sala
+          // Crear o unirse a la sala
           if (!rooms.has(message.roomId)) {
             rooms.set(message.roomId, new Set());
           }
@@ -71,11 +75,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           currentRoom = message.roomId;
 
           console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
-          ws.send(JSON.stringify({ 
-            type: "joined", 
-            roomId: message.roomId,
-            clients: roomClients.size 
-          }));
+
+          try {
+            const response: WebSocketMessage = { 
+              type: "joined", 
+              roomId: message.roomId,
+              clients: roomClients.size 
+            };
+            ws.send(JSON.stringify(response));
+          } catch (err) {
+            console.error("[WebSocket] Error sending join confirmation:", err);
+          }
           return;
         }
 
@@ -84,6 +94,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
+        // Manejar mensajes de señalización WebRTC
         if (["offer", "answer", "ice-candidate"].includes(message.type)) {
           const roomClients = rooms.get(currentRoom);
           if (!roomClients) {
@@ -91,22 +102,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
 
-          // Convert Set to Array for iteration
-          Array.from(roomClients).forEach((client) => {
+          for (const client of roomClients) {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               try {
                 client.send(JSON.stringify(message));
               } catch (err) {
-                console.error("[WebSocket] Error sending message:", err);
+                console.error("[WebSocket] Error forwarding message:", err);
               }
             }
-          });
+          }
         }
 
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
+          try {
+            ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
+          } catch (err) {
+            console.error("[WebSocket] Error sending error message:", err);
+          }
         }
       }
     });
@@ -126,6 +140,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     ws.on("error", (error) => {
       console.error("[WebSocket] Connection error:", error);
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: "error", error: "WebSocket error occurred" }));
+        } catch (err) {
+          console.error("[WebSocket] Error sending error message:", err);
+        }
+      }
     });
   });
 
@@ -195,14 +216,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
-        // Convert Set to Array for iteration
-        Array.from(roomClients).forEach((client) => {
+        for (const client of roomClients) {
           try {
             client.res.write(`data: ${JSON.stringify(message)}\n\n`);
           } catch (error) {
             console.error("[Translate] Error sending translation:", error);
           }
-        });
+        }
       }
 
       res.json({ translated });
