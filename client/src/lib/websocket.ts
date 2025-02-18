@@ -17,7 +17,9 @@ export class WebSocketHandler {
 
   private getWebSocketUrl() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${protocol}//${window.location.host}/ws`;
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    console.log("[WebSocket] Using WebSocket URL:", wsUrl);
+    return wsUrl;
   }
 
   public connect() {
@@ -25,12 +27,6 @@ export class WebSocketHandler {
       if (this.ws?.readyState === WebSocket.OPEN) {
         console.log("[WebSocket] Connection already active");
         return;
-      }
-
-      // Clean up any existing connection
-      if (this.ws) {
-        this.ws.close();
-        this.ws = null;
       }
 
       const wsUrl = this.getWebSocketUrl();
@@ -42,12 +38,18 @@ export class WebSocketHandler {
         console.log("[WebSocket] Connected successfully");
         this.isConnected = true;
 
-        // Join the room
-        this.send({ type: "join", roomId: this.roomId });
+        // Join the room immediately after connection
+        if (this.roomId) {
+          console.log("[WebSocket] Joining room:", this.roomId);
+          this.send({ type: "join", roomId: this.roomId });
+        } else {
+          console.error("[WebSocket] No room ID available");
+          this.onError?.(new Error("No room ID available for WebSocket connection"));
+        }
       };
 
-      this.ws.onclose = () => {
-        console.log("[WebSocket] Connection closed");
+      this.ws.onclose = (event) => {
+        console.log("[WebSocket] Connection closed:", event);
         this.isConnected = false;
 
         // Simple reconnection after 2 seconds
@@ -81,6 +83,8 @@ export class WebSocketHandler {
           const handler = this.messageHandlers.get(message.type);
           if (handler) {
             handler(message);
+          } else {
+            console.log("[WebSocket] No handler for message type:", message.type);
           }
         } catch (error) {
           console.error("[WebSocket] Error processing message:", error);
@@ -101,9 +105,8 @@ export class WebSocketHandler {
     }
 
     try {
-      const messageStr = JSON.stringify(message);
       console.log("[WebSocket] Sending message:", message);
-      this.ws.send(messageStr);
+      this.ws.send(JSON.stringify(message));
     } catch (error) {
       console.error("[WebSocket] Error sending message:", error);
       this.onError?.(error as Error);
@@ -111,6 +114,7 @@ export class WebSocketHandler {
   }
 
   public onMessage(type: string, handler: MessageHandler) {
+    console.log("[WebSocket] Registering handler for message type:", type);
     this.messageHandlers.set(type, handler);
   }
 
@@ -127,7 +131,7 @@ export class WebSocketHandler {
       this.reconnectTimeout = null;
     }
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.ws) {
       try {
         this.ws.close();
       } catch (error) {

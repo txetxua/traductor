@@ -139,18 +139,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
 
-  // Simplified WebSocket server setup for signaling only
+  // Improved WebSocket server setup with explicit configuration
   const wss = new WebSocketServer({
     server: httpServer,
-    path: "/ws"
+    path: "/ws",
+    clientTracking: true,
+    perMessageDeflate: false
   });
 
   console.log("[WebSocket] Server initialized on /ws");
 
   const rooms = new Map<string, Set<WebSocket>>();
 
-  wss.on("connection", (ws) => {
-    console.log("[WebSocket] New connection");
+  wss.on("connection", (ws, req) => {
+    console.log("[WebSocket] New connection established from:", req.socket.remoteAddress);
+    console.log("[WebSocket] Headers:", req.headers);
+
     let currentRoom: string | null = null;
 
     ws.on("message", (data) => {
@@ -160,24 +164,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (message.type === "join" && message.roomId) {
           currentRoom = message.roomId;
+
           if (!rooms.has(currentRoom)) {
             rooms.set(currentRoom, new Set());
           }
-          rooms.get(currentRoom)!.add(ws);
-          console.log(`[WebSocket] Client joined room ${currentRoom}`);
+
+          const roomClients = rooms.get(currentRoom)!;
+          roomClients.add(ws);
+          console.log(`[WebSocket] Client joined room ${currentRoom}, total clients: ${roomClients.size}`);
           ws.send(JSON.stringify({ type: "joined", roomId: currentRoom }));
           return;
         }
 
         // Only handle signaling messages if client is in a room
         if (!currentRoom) {
-          ws.send(JSON.stringify({ type: "error", error: "Not in a room" }));
+          console.log("[WebSocket] Received message without room assignment");
+          ws.send(JSON.stringify({ 
+            type: "error", 
+            error: "Not in a room. Please join a room first." 
+          }));
           return;
         }
 
         // Forward signaling messages to other clients in the room
         if (["offer", "answer", "ice-candidate"].includes(message.type)) {
-          rooms.get(currentRoom)!.forEach(client => {
+          const roomClients = rooms.get(currentRoom)!;
+          console.log(`[WebSocket] Broadcasting ${message.type} to ${roomClients.size - 1} other clients in room ${currentRoom}`);
+          roomClients.forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(data.toString());
             }
@@ -185,18 +198,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
-        ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
+        ws.send(JSON.stringify({ 
+          type: "error", 
+          error: "Invalid message format" 
+        }));
       }
     });
 
     ws.on("close", () => {
       if (currentRoom) {
-        rooms.get(currentRoom)?.delete(ws);
-        if (rooms.get(currentRoom)?.size === 0) {
-          rooms.delete(currentRoom);
+        const roomClients = rooms.get(currentRoom);
+        if (roomClients) {
+          roomClients.delete(ws);
+          console.log(`[WebSocket] Client left room ${currentRoom}, remaining clients: ${roomClients.size}`);
+
+          if (roomClients.size === 0) {
+            console.log(`[WebSocket] Removing empty room ${currentRoom}`);
+            rooms.delete(currentRoom);
+          }
         }
       }
     });
+
+    ws.on("error", (error) => {
+      console.error("[WebSocket] Connection error:", error);
+    });
+
+    // Send initial connection acknowledgment
+    ws.send(JSON.stringify({ type: "connected" }));
   });
 
   return httpServer;
