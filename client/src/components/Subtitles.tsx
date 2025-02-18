@@ -20,7 +20,9 @@ export default function Subtitles({ transcript, config }: Props) {
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     padding: "8px 12px",
     borderRadius: "4px",
-    lineHeight: "1.5"
+    lineHeight: "1.5",
+    whiteSpace: "pre-wrap", // Preservar saltos de línea
+    wordBreak: "break-word" // Evitar desbordamiento
   };
 
   return (
