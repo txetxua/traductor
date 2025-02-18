@@ -38,8 +38,22 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [videoEnabled, setVideoEnabled] = useState(true);
 
   useEffect(() => {
+    console.log("Configurando reconocimiento de voz para idioma:", language);
+
+    const handleSpeechResult = (text: string, translatedText: string) => {
+      console.log("Recibido texto y traducción:", { text, translatedText });
+      setTranscript(text);
+      setTranslated(translatedText);
+    };
+
+    const speech = new SpeechHandler(
+      roomId,
+      language,
+      handleSpeechResult
+    );
+
     const handleError = (error: Error) => {
-      console.error("Error in call:", error);
+      console.error("Error en llamada:", error);
       if (error.name === 'NotAllowedError') {
         setCameraError('No se ha dado permiso para acceder a la cámara');
       } else if (error.name === 'NotFoundError') {
@@ -59,7 +73,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       try {
         console.log("Iniciando llamada para room:", roomId);
 
-        // Verificar permisos de la cámara primero
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
         const hasMicrophone = devices.some(device => device.kind === 'audioinput');
@@ -94,21 +107,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             setConnectionState(state);
           },
           handleError
-        );
-
-        const speech = new SpeechHandler(
-          roomId,
-          language,
-          (text, translated) => {
-            if (translated) {
-              console.log("Recibida traducción:", { text, translated });
-              setTranscript(text);
-              setTranslated(translated);
-            } else {
-              setTranscript("");
-              setTranslated("");
-            }
-          }
         );
 
         console.log("Iniciando conexión WebRTC...");
@@ -177,7 +175,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   return (
     <div className="h-screen flex flex-col bg-background">
       <div className="flex-1 relative">
-        {/* Video remoto a pantalla completa */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -185,7 +182,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           className="absolute inset-0 w-full h-full object-cover bg-black/10"
         />
 
-        {/* Mensaje de error de cámara */}
         {cameraError && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
             <div className="bg-destructive p-4 rounded-lg">
@@ -194,7 +190,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           </div>
         )}
 
-        {/* Video local en esquina superior derecha */}
         <div className="absolute top-4 right-4 w-48 aspect-video">
           <video
             ref={localVideoRef}

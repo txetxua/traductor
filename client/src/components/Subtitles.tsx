@@ -8,7 +8,12 @@ interface Props {
 
 export default function Subtitles({ transcript, translated, config }: Props) {
   // No mostrar nada si no hay texto para mostrar
-  if (!transcript && !translated) return null;
+  if (!transcript && !translated) {
+    console.log("No hay texto que mostrar");
+    return null;
+  }
+
+  console.log("Mostrando subtítulos:", { transcript, translated });
 
   const subtitleStyle = {
     fontSize: `${config.fontSize}px`,

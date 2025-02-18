@@ -17,6 +17,7 @@ export class SpeechHandler {
   private initializeWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
+    console.log("[Speech] Conectando a WebSocket:", wsUrl);
 
     this.ws = new WebSocket(wsUrl);
 
@@ -33,13 +34,17 @@ export class SpeechHandler {
           // Solo mostramos mensajes que vienen del otro participante
           if (translationMsg.from !== this.language) {
             console.log("[Speech] Traducción recibida del otro participante:", translationMsg);
-            // Mostramos la traducción para el receptor
+            // Mostramos el texto original y la traducción para el receptor
             this.onTranscript(translationMsg.text, translationMsg.translated);
           }
         }
       } catch (error) {
         console.error("[Speech] Error procesando mensaje:", error);
       }
+    };
+
+    this.ws.onerror = (error) => {
+      console.error("[Speech] Error en WebSocket:", error);
     };
   }
 
@@ -58,6 +63,8 @@ export class SpeechHandler {
       it: "it-IT"
     };
     this.recognition.lang = langMap[this.language];
+
+    console.log("[Speech] Configurando reconocimiento para idioma:", this.language);
 
     this.recognition.onstart = () => {
       console.log("[Speech] Reconocimiento iniciado");
@@ -107,10 +114,11 @@ export class SpeechHandler {
         if (this.ws.readyState === WebSocket.OPEN) {
           const message: TranslationMessage = {
             type: "translation",
-            text: text,
+            text,
             from: this.language,
-            translated: translated
+            translated
           };
+          console.log("[Speech] Enviando mensaje de traducción:", message);
           this.ws.send(JSON.stringify(message));
         }
       } catch (error) {
@@ -122,6 +130,7 @@ export class SpeechHandler {
   start() {
     if (this.recognition && !this.isStarted) {
       try {
+        console.log("[Speech] Iniciando reconocimiento de voz");
         this.recognition.start();
       } catch (error) {
         console.error("[Speech] Error al iniciar:", error);
