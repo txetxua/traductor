@@ -84,14 +84,11 @@ export class SpeechHandler {
         const translationMsg = message as TranslationMessage;
         console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Si soy italiano (it) y recibo un mensaje en español (es), muestro la traducción
-        if (this.language === "it" && translationMsg.from === "es") {
-          console.log("[Speech] (Receptor IT) Mostrando traducción al italiano:", translationMsg.translated);
-          this.onTranscript(translationMsg.translated, false);
-        }
-        // Si soy español (es) y recibo un mensaje en italiano (it), muestro la traducción
-        else if (this.language === "es" && translationMsg.from === "it") {
-          console.log("[Speech] (Emisor ES) Mostrando traducción al español:", translationMsg.translated);
+        // Si el mensaje viene del italiano (from === "it") y yo soy español (language === "es")
+        // O si el mensaje viene del español (from === "es") y yo soy italiano (language === "it")
+        if ((translationMsg.from === "it" && this.language === "es") ||
+            (translationMsg.from === "es" && this.language === "it")) {
+          console.log(`[Speech] Mostrando traducción de ${translationMsg.from} a ${this.language}:`, translationMsg.translated);
           this.onTranscript(translationMsg.translated, false);
         }
       }
