@@ -30,22 +30,15 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const { toast } = useToast();
 
   const [transcript, setTranscript] = useState("");
-  const [translated, setTranslated] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
   const [cameraError, setCameraError] = useState<string>();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
-  const [isLocalUser, setIsLocalUser] = useState(true); // Added state to track user role
 
   useEffect(() => {
-    console.log("Configurando reconocimiento de voz para idioma:", language);
-
-    const handleSpeechResult = (text: string, translatedText: string) => {
-      console.log("Texto recibido:", text);
-      console.log("Traducción recibida:", translatedText);
+    const handleSpeechResult = (text: string) => {
       setTranscript(text);
-      setTranslated(translatedText);
     };
 
     const speech = new SpeechHandler(
@@ -55,7 +48,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     );
 
     const handleError = (error: Error) => {
-      console.error("Error en llamada:", error);
       if (error.name === 'NotAllowedError') {
         setCameraError('No se ha dado permiso para acceder a la cámara');
       } else if (error.name === 'NotFoundError') {
@@ -73,16 +65,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
     async function initializeCall() {
       try {
-        console.log("Iniciando llamada para room:", roomId);
-
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
         const hasMicrophone = devices.some(device => device.kind === 'audioinput');
-
-        console.log("Dispositivos disponibles:", {
-          camera: hasCamera,
-          microphone: hasMicrophone
-        });
 
         if (!hasCamera && videoEnabled) {
           throw new Error('No se detectó ninguna cámara');
@@ -95,36 +80,24 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         const webrtc = new WebRTCConnection(
           roomId,
           (stream) => {
-            console.log("Stream remoto recibido:", {
-              hasVideo: stream.getVideoTracks().length > 0,
-              hasAudio: stream.getAudioTracks().length > 0
-            });
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = stream;
               remoteVideoRef.current.play().catch(console.error);
             }
-            setIsLocalUser(false); // Set to false when remote stream is received
           },
           (state) => {
-            console.log("Estado de conexión cambiado a:", state);
             setConnectionState(state);
           },
           handleError
         );
 
-        console.log("Iniciando conexión WebRTC...");
         const localStream = await webrtc.start(videoEnabled);
-        console.log("Stream local obtenido:", {
-          hasVideo: localStream.getVideoTracks().length > 0,
-          hasAudio: localStream.getAudioTracks().length > 0
-        });
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = localStream;
           localVideoRef.current.play().catch(console.error);
         }
 
-        // Configurar estado inicial de audio/video
         localStream.getAudioTracks().forEach(track => {
           track.enabled = audioEnabled;
         });
@@ -206,8 +179,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
         <Subtitles
-          transcript={isLocalUser ? "" : transcript}  // Only show transcript for remote user
-          translated={translated}
+          transcript={transcript}
+          translated=""
           config={subtitlesConfig}
         />
       </div>

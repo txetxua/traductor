@@ -8,7 +8,7 @@ export class SpeechHandler {
   constructor(
     private roomId: string,
     private language: Language,
-    private onTranscript: (text: string, translated: string) => void
+    private onTranscript: (text: string) => void
   ) {
     this.initializeWebSocket();
     this.setupRecognition();
@@ -17,17 +17,11 @@ export class SpeechHandler {
   private initializeWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    console.log("[Speech] Conectando a WebSocket:", wsUrl);
 
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log("[Speech] WebSocket conectado");
       this.ws.send(JSON.stringify({ type: "join", roomId: this.roomId }));
-    };
-
-    this.ws.onclose = () => {
-      console.log("[Speech] WebSocket cerrado");
     };
 
     this.ws.onmessage = (event) => {
@@ -37,18 +31,13 @@ export class SpeechHandler {
           const translationMsg = message as TranslationMessage;
           // Solo procesamos mensajes del otro participante
           if (translationMsg.from !== this.language) {
-            console.log("[Speech] Traducción recibida:", translationMsg);
-            // El receptor ve el texto original y la traducción
-            this.onTranscript(translationMsg.text, translationMsg.translated);
+            // Mostramos solo el texto original
+            this.onTranscript(translationMsg.text);
           }
         }
       } catch (error) {
         console.error("[Speech] Error procesando mensaje:", error);
       }
-    };
-
-    this.ws.onerror = (error) => {
-      console.error("[Speech] Error en WebSocket:", error);
     };
   }
 
@@ -68,15 +57,11 @@ export class SpeechHandler {
     };
     this.recognition.lang = langMap[this.language];
 
-    console.log("[Speech] Configurando reconocimiento para idioma:", this.language);
-
     this.recognition.onstart = () => {
-      console.log("[Speech] Reconocimiento iniciado");
       this.isStarted = true;
     };
 
     this.recognition.onend = () => {
-      console.log("[Speech] Reconocimiento finalizado");
       if (this.isStarted) {
         try {
           this.recognition.start();
@@ -88,44 +73,19 @@ export class SpeechHandler {
 
     this.recognition.onresult = async (event: any) => {
       const text = event.results[event.results.length - 1][0].transcript;
-      console.log("[Speech] Texto reconocido:", text);
 
-      try {
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            text,
-            from: this.language,
-            to: this.language === "es" ? "it" : "es"
-          }),
-        });
+      // Para el emisor, mostramos su propio texto
+      this.onTranscript(text);
 
-        if (!response.ok) {
-          throw new Error(`Error de traducción: ${response.status}`);
-        }
-
-        const { translated } = await response.json();
-        console.log("[Speech] Traducción obtenida:", translated);
-
-        // El emisor solo ve su texto original
-        this.onTranscript(text, "");
-
-        // Enviar al otro participante
-        if (this.ws.readyState === WebSocket.OPEN) {
-          const message: TranslationMessage = {
-            type: "translation",
-            text,
-            from: this.language,
-            translated
-          };
-          console.log("[Speech] Enviando mensaje de traducción:", message);
-          this.ws.send(JSON.stringify(message));
-        }
-      } catch (error) {
-        console.error("[Speech] Error:", error);
+      // Enviar al otro participante
+      if (this.ws.readyState === WebSocket.OPEN) {
+        const message: TranslationMessage = {
+          type: "translation",
+          text,
+          from: this.language,
+          translated: text // Enviamos el mismo texto como traducción
+        };
+        this.ws.send(JSON.stringify(message));
       }
     };
   }
@@ -133,7 +93,6 @@ export class SpeechHandler {
   start() {
     if (this.recognition && !this.isStarted) {
       try {
-        console.log("[Speech] Iniciando reconocimiento de voz");
         this.recognition.start();
       } catch (error) {
         console.error("[Speech] Error al iniciar:", error);

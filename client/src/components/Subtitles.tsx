@@ -2,18 +2,13 @@ import { type SubtitlesConfig } from "./SubtitlesConfig";
 
 interface Props {
   transcript: string;
-  translated: string;
   config: SubtitlesConfig;
 }
 
-export default function Subtitles({ transcript, translated, config }: Props) {
-  // No mostrar nada si no hay texto para mostrar
-  if (!transcript && !translated) {
-    console.log("No hay texto que mostrar");
+export default function Subtitles({ transcript, config }: Props) {
+  if (!transcript) {
     return null;
   }
-
-  console.log("Mostrando subtítulos:", { transcript, translated });
 
   const subtitleStyle = {
     fontSize: `${config.fontSize}px`,
@@ -30,22 +25,12 @@ export default function Subtitles({ transcript, translated, config }: Props) {
 
   return (
     <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
-      {transcript && (
-        <div 
-          className="text-center"
-          style={subtitleStyle}
-        >
-          {transcript}
-        </div>
-      )}
-      {translated && (
-        <div
-          className="text-center"
-          style={subtitleStyle}
-        >
-          {translated}
-        </div>
-      )}
+      <div 
+        className="text-center"
+        style={subtitleStyle}
+      >
+        {transcript}
+      </div>
     </div>
   );
 }
