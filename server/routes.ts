@@ -31,7 +31,68 @@ const translations: Record<string, Record<string, string>> = {
     "perdón": "scusi",
     "lo siento": "mi dispiace",
     "de nada": "prego",
-    "por supuesto": "certo"
+    "por supuesto": "certo",
+    "ver": "vedere",
+    "hablar": "parlare",
+    "entender": "capire",
+    "escuchar": "ascoltare",
+    "decir": "dire",
+    "hacer": "fare",
+    "querer": "volere",
+    "poder": "potere",
+    "tener": "avere",
+    "estar": "stare",
+    "ser": "essere",
+    "ir": "andare",
+    "venir": "venire",
+    "salir": "uscire",
+    "entrar": "entrare",
+    "trabajar": "lavorare",
+    "estudiar": "studiare",
+    "vivir": "vivere",
+    "comer": "mangiare",
+    "beber": "bere",
+    "dormir": "dormire",
+    "despertar": "svegliare",
+    "pensar": "pensare",
+    "creer": "credere",
+    "saber": "sapere",
+    "conocer": "conoscere",
+    "recordar": "ricordare",
+    "olvidar": "dimenticare",
+    "comenzar": "cominciare",
+    "terminar": "finire",
+    "ahora": "adesso",
+    "después": "dopo",
+    "antes": "prima",
+    "siempre": "sempre",
+    "nunca": "mai",
+    "jamás": "mai",
+    "aquí": "qui",
+    "allí": "lì",
+    "cerca": "vicino",
+    "lejos": "lontano",
+    "dentro": "dentro",
+    "fuera": "fuori",
+    "sobre": "su",
+    "bajo": "sotto",
+    "entre": "tra",
+    "detrás": "dietro",
+    "delante": "davanti",
+    "todo": "tutto",
+    "nada": "niente",
+    "algo": "qualcosa",
+    "alguien": "qualcuno",
+    "nadie": "nessuno",
+    "cada": "ogni",
+    "mucho": "molto",
+    "poco": "poco",
+    "bastante": "abbastanza",
+    "demasiado": "troppo",
+    "más": "più",
+    "menos": "meno",
+    "mejor": "meglio",
+    "peor": "peggio"
   },
   it: {
     "ciao": "hola",
@@ -51,7 +112,67 @@ const translations: Record<string, Record<string, string>> = {
     "scusi": "perdón",
     "mi dispiace": "lo siento",
     "prego": "de nada",
-    "certo": "por supuesto"
+    "certo": "por supuesto",
+    "vedere": "ver",
+    "parlare": "hablar",
+    "capire": "entender",
+    "ascoltare": "escuchar",
+    "dire": "decir",
+    "fare": "hacer",
+    "volere": "querer",
+    "potere": "poder",
+    "avere": "tener",
+    "stare": "estar",
+    "essere": "ser",
+    "andare": "ir",
+    "venire": "venir",
+    "uscire": "salir",
+    "entrare": "entrar",
+    "lavorare": "trabajar",
+    "studiare": "estudiar",
+    "vivere": "vivir",
+    "mangiare": "comer",
+    "bere": "beber",
+    "dormire": "dormir",
+    "svegliare": "despertar",
+    "pensare": "pensar",
+    "credere": "creer",
+    "sapere": "saber",
+    "conoscere": "conocer",
+    "ricordare": "recordar",
+    "dimenticare": "olvidar",
+    "cominciare": "comenzar",
+    "finire": "terminar",
+    "adesso": "ahora",
+    "dopo": "después",
+    "prima": "antes",
+    "sempre": "siempre",
+    "mai": "nunca",
+    "qui": "aquí",
+    "lì": "allí",
+    "vicino": "cerca",
+    "lontano": "lejos",
+    "dentro": "dentro",
+    "fuori": "fuera",
+    "su": "sobre",
+    "sotto": "bajo",
+    "tra": "entre",
+    "dietro": "detrás",
+    "davanti": "delante",
+    "tutto": "todo",
+    "niente": "nada",
+    "qualcosa": "algo",
+    "qualcuno": "alguien",
+    "nessuno": "nadie",
+    "ogni": "cada",
+    "molto": "mucho",
+    "poco": "poco",
+    "abbastanza": "bastante",
+    "troppo": "demasiado",
+    "più": "más",
+    "meno": "menos",
+    "meglio": "mejor",
+    "peggio": "peor"
   }
 };
 
@@ -65,48 +186,36 @@ const translateText = (text: string, from: string, to: string) => {
   }
 
   // Normalizar el texto a minúsculas para mejor coincidencia
-  const lowerText = text.toLowerCase();
+  const lowerText = text.toLowerCase().trim();
 
-  // Buscar traducciones exactas primero
+  // Primero intentar traducir la frase completa
   if (translations[from] && translations[from][lowerText]) {
     const translated = translations[from][lowerText];
     console.log(`[Translate] Traducción exacta encontrada: ${text} -> ${translated}`);
     return translated;
   }
 
-  // Si no hay traducción exacta, aplicar reglas de traducción
-  let translated = to === 'it' ? 
-    // Traducir a italiano
-    text
-      .replace(/ción/g, 'zione')
-      .replace(/dad/g, 'tà')
-      .replace(/ar$/g, 'are')
-      .replace(/er$/g, 'ere')
-      .replace(/ir$/g, 'ire')
-      .replace(/el/g, 'il')
-      .replace(/la/g, 'la')
-      .replace(/los/g, 'i')
-      .replace(/las/g, 'le')
-      .replace(/es/g, 'è')
-      .replace(/está/g, 'sta')
-      .replace(/bien/g, 'bene')
-      .replace(/mal/g, 'male')
-    :
-    // Traducir a español
-    text
-      .replace(/zione/g, 'ción')
-      .replace(/tà/g, 'dad')
-      .replace(/are$/g, 'ar')
-      .replace(/ere$/g, 'er')
-      .replace(/ire$/g, 'ir')
-      .replace(/il/g, 'el')
-      .replace(/i /g, 'los ')
-      .replace(/le /g, 'las ')
-      .replace(/è/g, 'es')
-      .replace(/sta/g, 'está')
-      .replace(/bene/g, 'bien')
-      .replace(/male/g, 'mal');
+  // Si no hay traducción exacta de la frase, traducir palabra por palabra
+  const words = lowerText.split(/\s+/);
+  const translatedWords = words.map(word => {
+    const wordTranslation = translations[from]?.[word];
+    if (wordTranslation) {
+      console.log(`[Translate] Palabra traducida: ${word} -> ${wordTranslation}`);
+      return wordTranslation;
+    }
+    // Si no encontramos traducción, aplicar reglas básicas de traducción italiano-español
+    if (to === 'it') {
+      return word
+        .replace(/ción$/, 'zione')
+        .replace(/dad$/, 'tà')
+        .replace(/ar$/, 'are')
+        .replace(/er$/, 'ere')
+        .replace(/ir$/, 'ire');
+    }
+    return word;
+  });
 
+  const translated = translatedWords.join(' ');
   console.log(`[Translate] Traducción generada: ${text} -> ${translated}`);
   return translated;
 };

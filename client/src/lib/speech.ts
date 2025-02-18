@@ -68,11 +68,18 @@ export class SpeechHandler {
       const message = JSON.parse(event.data);
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;
-        // Solo procesamos mensajes del otro participante
+        console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
+
+        // Si el mensaje es de otro participante (diferente idioma)
         if (translationMsg.from !== this.language) {
-          console.log("[Speech] Mensaje recibido de otro participante:", translationMsg);
-          // El receptor ve la traducción
+          console.log(`[Speech] Procesando traducción de ${translationMsg.from} a ${this.language}`);
+          console.log(`[Speech] Texto original: "${translationMsg.text}"`);
+          console.log(`[Speech] Texto traducido: "${translationMsg.translated}"`);
+
+          // El receptor ve la traducción en su idioma
           this.onTranscript(translationMsg.translated, false);
+        } else {
+          console.log(`[Speech] Ignorando mensaje en mismo idioma (${this.language})`);
         }
       }
     } catch (error) {
@@ -126,53 +133,61 @@ export class SpeechHandler {
       this.onError?.(new Error(`Error en reconocimiento de voz: ${event.error}`));
     };
 
-    this.recognition.onresult = async (event: any) => {
-      try {
-        const text = event.results[event.results.length - 1][0].transcript;
-        console.log("[Speech] Texto reconocido:", text);
-
-        // El emisor ve su texto original
-        this.onTranscript(text, true);
-
-        // Traducir antes de enviar
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            text,
-            from: this.language,
-            to: this.language === "es" ? "it" : "es"
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Error de traducción: ${response.status}`);
-        }
-
-        const { translated } = await response.json();
-        console.log("[Speech] Texto traducido:", translated);
-
-        // Enviar mensaje con traducción al otro participante
-        if (this.ws.readyState === WebSocket.OPEN) {
-          const message: TranslationMessage = {
-            type: "translation",
-            text,
-            from: this.language,
-            translated
-          };
-          console.log("[Speech] Enviando mensaje de traducción:", message);
-          this.ws.send(JSON.stringify(message));
-        } else {
-          throw new Error("La conexión WebSocket está cerrada");
-        }
-      } catch (error) {
-        console.error("[Speech] Error:", error);
-        this.onError?.(error as Error);
-      }
-    };
+    this.recognition.onresult = this.onresult.bind(this);
   }
+
+
+  private async handleRecognitionResult(text: string) {
+    try {
+      console.log(`[Speech] Texto reconocido en ${this.language}:`, text);
+
+      // El emisor ve su texto original
+      this.onTranscript(text, true);
+
+      // Traducir antes de enviar
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          from: this.language,
+          to: this.language === "es" ? "it" : "es"
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error de traducción: ${response.status}`);
+      }
+
+      const { translated } = await response.json();
+      console.log(`[Speech] Texto traducido de ${this.language} a ${this.language === "es" ? "it" : "es"}:`, translated);
+
+      // Enviar mensaje con traducción al otro participante
+      if (this.ws.readyState === WebSocket.OPEN) {
+        const message: TranslationMessage = {
+          type: "translation",
+          text: text,
+          from: this.language,
+          translated: translated
+        };
+        console.log("[Speech] Enviando mensaje de traducción:", message);
+        this.ws.send(JSON.stringify(message));
+      } else {
+        throw new Error("La conexión WebSocket está cerrada");
+      }
+    } catch (error) {
+      console.error("[Speech] Error:", error);
+      this.onError?.(error as Error);
+    }
+  }
+
+  onresult = async (event: any) => {
+    const text = event.results[event.results.length - 1][0].transcript;
+    await this.handleRecognitionResult(text);
+  };
+
 
   start() {
     if (this.recognition && !this.isStarted) {

@@ -40,17 +40,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   useEffect(() => {
     const handleSpeechResult = (text: string, isLocal: boolean) => {
       console.log("[VideoCall] Recibido texto:", text, "isLocal:", isLocal);
+
+      // Si es un mensaje local (el que hablamos)
       if (isLocal) {
         setLocalTranscript(text);
-        // No limpiamos el transcript remoto cuando hablamos localmente
-        // para permitir que ambos vean sus respectivos mensajes
-      } else {
+        // No limpiamos el transcript remoto para que se puedan ver ambos mensajes
+      } 
+      // Si es un mensaje remoto (traducido del otro participante)
+      else {
         setRemoteTranscript(text);
-        // No limpiamos el transcript local cuando recibimos
-        // para permitir que ambos mensajes se muestren
+        // No limpiamos el transcript local para que se puedan ver ambos mensajes
       }
 
-      // Limpiar los transcripts después de un tiempo
+      // Limpiar el mensaje correspondiente después de un tiempo
       setTimeout(() => {
         if (isLocal) {
           setLocalTranscript("");
@@ -225,13 +227,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           {localTranscript && (
             <Subtitles
               transcript={localTranscript}
-              config={{...subtitlesConfig, color: "yellow"}} // Color diferente para distinguir
+              config={{...subtitlesConfig, color: "yellow"}} // Color amarillo para mensajes locales
             />
           )}
           {remoteTranscript && (
             <Subtitles
               transcript={remoteTranscript}
-              config={subtitlesConfig}
+              config={subtitlesConfig} // Color normal para mensajes traducidos
             />
           )}
         </div>
