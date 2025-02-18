@@ -50,14 +50,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
   useEffect(() => {
     const handleSpeechResult = (text: string, isLocal: boolean) => {
-      // Solo mostramos el texto si:
-      // - Es un mensaje local y somos el receptor (italiano)
-      // - Es un mensaje remoto y somos el emisor (español)
-      if ((isLocal && language === "it") || (!isLocal && language === "es")) {
-        console.log("[VideoCall] Mostrando texto:", text);
-        setTranscript(text);
-        clearTranscriptAfterDelay();
-      }
+      console.log("[VideoCall] Recibiendo texto:", text, "isLocal:", isLocal);
+      setTranscript(text);
+      clearTranscriptAfterDelay();
     };
 
     const speech = new SpeechHandler(

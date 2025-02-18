@@ -64,22 +64,17 @@ export class SpeechHandler {
       const message = JSON.parse(event.data);
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;
+        console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Solo procesamos las traducciones que nos interesan:
-        // - Si somos el emisor (español), mostramos las traducciones del italiano
-        // - Si somos el receptor (italiano), mostramos los mensajes originales en español
-        if (
-          (this.language === "es" && translationMsg.from === "it") ||
-          (this.language === "it" && translationMsg.from === "es")
-        ) {
-          console.log(`[Speech] Mostrando mensaje de ${translationMsg.from}:`, 
-            this.language === "es" ? translationMsg.translated : translationMsg.text);
-
-          // El emisor (español) ve la traducción, el receptor (italiano) ve el original
-          this.onTranscript(
-            this.language === "es" ? translationMsg.translated : translationMsg.text,
-            false
-          );
+        // Si somos el receptor (italiano), mostramos los mensajes que vienen del emisor (español)
+        if (this.language === "it" && translationMsg.from === "es") {
+          console.log("[Speech] Mostrando texto original en italiano");
+          this.onTranscript(translationMsg.text, false);
+        }
+        // Si somos el emisor (español), mostramos las traducciones que vienen del receptor (italiano)
+        else if (this.language === "es" && translationMsg.from === "it") {
+          console.log("[Speech] Mostrando traducción al español");
+          this.onTranscript(translationMsg.translated, false);
         }
       }
     } catch (error) {
@@ -139,43 +134,43 @@ export class SpeechHandler {
     try {
       console.log(`[Speech] Texto reconocido en ${this.language}:`, text);
 
-      // El receptor (italiano) ve su propio texto, el emisor (español) no
+      // Solo mostramos el texto local para el receptor (italiano)
       if (this.language === "it") {
+        console.log("[Speech] Mostrando texto local en italiano");
         this.onTranscript(text, true);
       }
 
-      // Solo traducimos si es necesario (cuando el emisor habla español)
-      if (this.language === "es" || this.language === "it") {
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            text,
-            from: this.language,
-            to: this.language === "es" ? "it" : "es"
-          }),
-        });
+      // Siempre traducimos y enviamos el mensaje
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          from: this.language,
+          to: this.language === "es" ? "it" : "es"
+        }),
+      });
 
-        if (!response.ok) {
-          throw new Error(`Error de traducción: ${response.status}`);
-        }
+      if (!response.ok) {
+        throw new Error(`Error de traducción: ${response.status}`);
+      }
 
-        const { translated } = await response.json();
+      const { translated } = await response.json();
+      console.log(`[Speech] Texto traducido de ${this.language} a ${this.language === "es" ? "it" : "es"}:`, translated);
 
-        if (this.ws.readyState === WebSocket.OPEN) {
-          const message: TranslationMessage = {
-            type: "translation",
-            text: text,
-            from: this.language,
-            translated: translated
-          };
-          console.log("[Speech] Enviando mensaje de traducción:", message);
-          this.ws.send(JSON.stringify(message));
-        } else {
-          throw new Error("La conexión WebSocket está cerrada");
-        }
+      if (this.ws.readyState === WebSocket.OPEN) {
+        const message: TranslationMessage = {
+          type: "translation",
+          text: text,
+          from: this.language,
+          translated: translated
+        };
+        console.log("[Speech] Enviando mensaje de traducción:", message);
+        this.ws.send(JSON.stringify(message));
+      } else {
+        throw new Error("La conexión WebSocket está cerrada");
       }
     } catch (error) {
       console.error("[Speech] Error:", error);
