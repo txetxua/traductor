@@ -11,53 +11,96 @@ const translateSchema = z.object({
   to: z.enum(["es", "it"])
 });
 
-// Simulación básica de traducción para pruebas
-const translateText = (text: string, from: string, to: string) => {
-  // Palabras comunes en español e italiano para simular traducción
-  const translations: Record<string, Record<string, string>> = {
-    es: {
-      "hola": "ciao",
-      "buenos días": "buongiorno",
-      "gracias": "grazie",
-      "por favor": "per favore",
-      "sí": "sì",
-      "no": "no",
-      "¿cómo estás?": "come stai?",
-      "bien": "bene",
-      "mal": "male",
-      "adiós": "arrivederci"
-    },
-    it: {
-      "ciao": "hola",
-      "buongiorno": "buenos días",
-      "grazie": "gracias",
-      "per favore": "por favor",
-      "sì": "sí",
-      "no": "no",
-      "come stai?": "¿cómo estás?",
-      "bene": "bien",
-      "male": "mal",
-      "arrivederci": "adiós"
-    }
-  };
-
-  // Convertir el texto a minúsculas para la búsqueda
-  const lowerText = text.toLowerCase();
-
-  // Buscar y reemplazar palabras conocidas
-  let translated = lowerText;
-  Object.entries(translations[from] || {}).forEach(([key, value]) => {
-    const regex = new RegExp(key, 'gi');
-    translated = translated.replace(regex, value);
-  });
-
-  // Si no se encontró ninguna traducción, simular una traducción
-  if (translated === lowerText) {
-    return `[${to.toUpperCase()}] ${text}`;
+// Palabras comunes en español e italiano para simular traducción
+const translations: Record<string, Record<string, string>> = {
+  es: {
+    "hola": "ciao",
+    "buenos días": "buongiorno",
+    "gracias": "grazie",
+    "por favor": "per favore",
+    "sí": "sì",
+    "no": "no",
+    "¿cómo estás?": "come stai?",
+    "bien": "bene",
+    "mal": "male",
+    "adiós": "arrivederci",
+    "¿qué tal?": "come va?",
+    "mucho gusto": "piacere",
+    "hasta luego": "a dopo",
+    "bienvenido": "benvenuto",
+    "perdón": "scusi",
+    "lo siento": "mi dispiace",
+    "de nada": "prego",
+    "por supuesto": "certo"
+  },
+  it: {
+    "ciao": "hola",
+    "buongiorno": "buenos días",
+    "grazie": "gracias",
+    "per favore": "por favor",
+    "sì": "sí",
+    "no": "no",
+    "come stai?": "¿cómo estás?",
+    "bene": "bien",
+    "male": "mal",
+    "arrivederci": "adiós",
+    "come va?": "¿qué tal?",
+    "piacere": "mucho gusto",
+    "a dopo": "hasta luego",
+    "benvenuto": "bienvenido",
+    "scusi": "perdón",
+    "mi dispiace": "lo siento",
+    "prego": "de nada",
+    "certo": "por supuesto"
   }
+};
 
-  // Capitalizar la primera letra de la traducción
-  return translated.charAt(0).toUpperCase() + translated.slice(1);
+// Mejorada la función de traducción para simular mejor
+const translateText = (text: string, from: string, to: string) => {
+  // Si el idioma de origen y destino son iguales, no traducimos
+  if (from === to) return text;
+
+  // Simular traducción cambiando el texto según el idioma destino
+  if (to === 'it') {
+    // Traducir a italiano
+    return text
+      // Cambiar terminaciones comunes
+      .replace(/ción/g, 'zione')
+      .replace(/dad/g, 'tà')
+      .replace(/ar$/g, 'are')
+      .replace(/er$/g, 'ere')
+      .replace(/ir$/g, 'ire')
+      // Cambiar palabras comunes
+      .replace(/el/g, 'il')
+      .replace(/la/g, 'la')
+      .replace(/los/g, 'i')
+      .replace(/las/g, 'le')
+      .replace(/es/g, 'è')
+      .replace(/está/g, 'sta')
+      .replace(/bien/g, 'bene')
+      .replace(/mal/g, 'male')
+      // Añadir prefijo para indicar que es una traducción
+      .replace(/^/, '[IT] ');
+  } else {
+    // Traducir a español
+    return text
+      // Cambiar terminaciones comunes
+      .replace(/zione/g, 'ción')
+      .replace(/tà/g, 'dad')
+      .replace(/are$/g, 'ar')
+      .replace(/ere$/g, 'er')
+      .replace(/ire$/g, 'ir')
+      // Cambiar palabras comunes
+      .replace(/il/g, 'el')
+      .replace(/i /g, 'los ')
+      .replace(/le /g, 'las ')
+      .replace(/è/g, 'es')
+      .replace(/sta/g, 'está')
+      .replace(/bene/g, 'bien')
+      .replace(/male/g, 'mal')
+      // Añadir prefijo para indicar que es una traducción
+      .replace(/^/, '[ES] ');
+  }
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -110,9 +153,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             rooms.set(roomId, new Set());
           }
           rooms.get(roomId)!.add(ws);
-        } 
-        else if (message.type === "translation" || message.type === "offer" || 
-                 message.type === "answer" || message.type === "ice-candidate") {
+        } else if (message.type === "translation" || message.type === "offer" ||
+          message.type === "answer" || message.type === "ice-candidate") {
           if (!currentRoom || !rooms.has(currentRoom)) {
             console.warn("[WebSocket] Cliente no está en ninguna sala");
             return;
