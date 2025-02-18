@@ -52,14 +52,15 @@ export class TranslationHandler {
           console.log("[Translations] Message received:", message);
 
           if (message.type === "translation") {
+            // Invertir la lógica aquí:
+            // Si el mensaje está en nuestro idioma (somos el emisor), mostramos al receptor
+            // Si el mensaje está traducido a nuestro idioma (somos el receptor), mostramos al emisor
             if (message.from === this.language) {
-              // Si el mensaje es de nuestro idioma, mostramos la traducción al receptor
-              console.log("[Translations] Remote transcript (receiver):", message.text);
-              this.onTranslation(message.text, false);
+              console.log("[Translations] Showing local transcript to receiver:", message.text);
+              this.onTranslation(message.text, true);
             } else if (message.to === this.language) {
-              // Si el mensaje está traducido a nuestro idioma, mostramos la traducción al emisor
-              console.log("[Translations] Remote translation (sender):", message.translated);
-              this.onTranslation(message.translated, true);
+              console.log("[Translations] Showing remote transcript to sender:", message.translated);
+              this.onTranslation(message.translated, false);
             }
           }
         } catch (error) {
@@ -104,7 +105,6 @@ export class TranslationHandler {
       const baseUrl = this.getApiBaseUrl();
       console.log("[Translations] Sending text for translation:", text);
 
-      // Determinar el idioma de destino (opuesto al idioma actual)
       const targetLanguage: Language = this.language === "es" ? "it" : "es";
 
       const response = await fetch(`${baseUrl}/api/translate`, {

@@ -142,19 +142,25 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           throw new Error('No microphone detected');
         }
 
-        // Check permissions
-        const permissions = await navigator.mediaDevices.getUserMedia({
+        // Get user media stream first
+        const stream = await navigator.mediaDevices.getUserMedia({
           video: videoEnabled,
           audio: true
         });
-        permissions.getTracks().forEach(track => track.stop());
 
+        // Set up local video
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          await localVideoRef.current.play().catch(console.error);
+        }
+
+        // Initialize WebRTC with the stream
         const webrtc = new WebRTCConnection(
           roomId,
-          (stream) => {
+          (remoteStream) => {
             if (!mounted) return;
             if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = stream;
+              remoteVideoRef.current.srcObject = remoteStream;
               remoteVideoRef.current.play().catch(console.error);
             }
           },
@@ -180,17 +186,12 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           handleError
         );
 
-        const localStream = await webrtc.start(videoEnabled);
+        await webrtc.start(stream);
 
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = localStream;
-          localVideoRef.current.play().catch(console.error);
-        }
-
-        localStream.getAudioTracks().forEach(track => {
+        stream.getAudioTracks().forEach(track => {
           track.enabled = audioEnabled;
         });
-        localStream.getVideoTracks().forEach(track => {
+        stream.getVideoTracks().forEach(track => {
           track.enabled = videoEnabled;
         });
 

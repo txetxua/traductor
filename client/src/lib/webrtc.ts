@@ -116,17 +116,9 @@ export class WebRTCConnection {
     };
   }
 
-  async start(videoEnabled: boolean) {
+  async start(stream: MediaStream) {
     try {
-      const constraints: MediaStreamConstraints = {
-        video: videoEnabled ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } : false,
-        audio: true
-      };
-
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.stream = stream;
 
       this.stream.getTracks().forEach(track => {
         if (this.stream) {
@@ -134,7 +126,6 @@ export class WebRTCConnection {
         }
       });
 
-      return this.stream;
     } catch (err) {
       console.error("[WebRTC] Error al iniciar:", err);
       this.onError(err as Error);

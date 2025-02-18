@@ -5,7 +5,7 @@ import { callStorage } from "./storage";
 import { z } from "zod";
 import { 
   type WebSocketMessage, 
-  type SignalingMessage, 
+  type SignalingMessage,
   type TranslationMessage 
 } from "@shared/schema";
 import { translateText } from "./translation-service";
@@ -27,26 +27,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   const rooms = new Map<string, Set<WebSocket>>();
 
+  // Inicializar WebSocket Server
   const wss = new WebSocketServer({ 
     server: httpServer,
-    path: '/ws'
+    path: '/ws',
+    perMessageDeflate: false
   });
 
   console.log("[WebSocket] Server initialized on /ws");
 
   wss.on("connection", (ws, req) => {
     console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
+    console.log("[WebSocket] Headers:", req.headers);
     let currentRoom: string | null = null;
-
-    const sendMessage = (message: WebSocketMessage | SignalingMessage) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify(message));
-        } catch (err) {
-          console.error("[WebSocket] Error sending message:", err);
-        }
-      }
-    };
 
     ws.on("message", async (data) => {
       try {
@@ -55,7 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (message.type === "join") {
           if (!message.roomId) {
-            sendMessage({ type: "error", error: "Room ID is required" });
+            ws.send(JSON.stringify({ type: "error", error: "Room ID is required" }));
             return;
           }
 
@@ -68,12 +61,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           currentRoom = message.roomId;
 
           console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
-          sendMessage({ type: "joined", roomId: message.roomId, clients: roomClients.size });
+          ws.send(JSON.stringify({ type: "joined", roomId: message.roomId, clients: roomClients.size }));
           return;
         }
 
         if (!currentRoom) {
-          sendMessage({ type: "error", error: "Not in a room" });
+          ws.send(JSON.stringify({ type: "error", error: "Not in a room" }));
           return;
         }
 
@@ -93,7 +86,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (error) {
         console.error("[WebSocket] Error processing message:", error);
-        sendMessage({ type: "error", error: "Invalid message format" });
+        ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
       }
     });
 
@@ -113,7 +106,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     ws.on("error", (error) => {
       console.error("[WebSocket] Connection error:", error);
-      sendMessage({ type: "error", error: "WebSocket error occurred" });
+      try {
+        ws.send(JSON.stringify({ type: "error", error: "WebSocket error occurred" }));
+      } catch (err) {
+        console.error("[WebSocket] Error sending error message:", err);
+      }
     });
   });
 
@@ -162,7 +159,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Endpoint de traducción
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
     try {
@@ -190,7 +186,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
-        // Enviar el mensaje a todos los clientes en la sala
         for (const client of roomClients) {
           try {
             console.log(`[Translate] Sending translation message to client with language ${client.language}`);
