@@ -53,9 +53,12 @@ export class TranslationHandler {
 
           if (message.type === "translation") {
             const isLocal = message.from === this.language;
+
+            // For local messages, use the original text
+            // For remote messages, use the translated text
             const text = isLocal ? message.text : message.translated;
 
-            console.log(`[Translations] Processing ${isLocal ? 'local' : 'remote'} transcript:`, {
+            console.log(`[Translations] Processing ${isLocal ? 'local' : 'remote'} translation:`, {
               text,
               from: message.from,
               to: message.to,
