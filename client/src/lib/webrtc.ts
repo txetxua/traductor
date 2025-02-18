@@ -7,7 +7,9 @@ export class WebRTCConnection {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout?: NodeJS.Timeout;
-  private isInitiator: boolean = false;
+  private polite: boolean = false;
+  private makingOffer: boolean = false;
+  private ignoreOffer: boolean = false;
 
   constructor(
     private roomId: string,
@@ -15,6 +17,9 @@ export class WebRTCConnection {
     private onConnectionStateChange: (state: RTCPeerConnectionState) => void,
     private onError: (error: Error) => void
   ) {
+    // El cliente que se une después es "polite" y cederá en caso de colisión
+    this.polite = Math.random() > 0.5;
+    console.log("[WebRTC] Inicializando como cliente", this.polite ? "polite" : "impolite");
     this.initializePeerConnection();
     this.initializeWebSocket();
   }
@@ -39,7 +44,7 @@ export class WebRTCConnection {
 
     this.ws.onerror = (error) => {
       console.error("[WebRTC] Error en WebSocket:", error);
-      this.onError(new Error("Error en la conexión con el servidor"));
+      this.onError(new Error("Error en la conexión WebSocket"));
     };
 
     this.ws.onmessage = this.handleWebSocketMessage.bind(this);
@@ -49,10 +54,6 @@ export class WebRTCConnection {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       console.log(`[WebRTC] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-      }
 
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
       this.reconnectTimeout = setTimeout(() => {
@@ -72,17 +73,20 @@ export class WebRTCConnection {
 
       switch (message.type) {
         case "offer":
-          if (this.pc.signalingState !== "stable") {
-            console.log("[WebRTC] Rollback necesario, estado actual:", this.pc.signalingState);
-            await Promise.all([
-              this.pc.setLocalDescription({type: "rollback"}),
-              this.pc.setRemoteDescription(new RTCSessionDescription(message.payload))
-            ]);
-          } else {
-            await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+          const offerCollision = 
+            this.makingOffer || 
+            this.pc.signalingState !== "stable";
+
+          this.ignoreOffer = !this.polite && offerCollision;
+          if (this.ignoreOffer) {
+            console.log("[WebRTC] Ignorando oferta debido a colisión");
+            return;
           }
 
-          console.log("[WebRTC] Oferta establecida, creando respuesta");
+          console.log("[WebRTC] Procesando oferta, estado:", this.pc.signalingState);
+          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+
+          console.log("[WebRTC] Creando respuesta");
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
 
@@ -93,24 +97,21 @@ export class WebRTCConnection {
           break;
 
         case "answer":
-          console.log("[WebRTC] Procesando respuesta en estado:", this.pc.signalingState);
-          if (this.pc.signalingState === "have-local-offer") {
-            await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-          } else {
-            console.warn("[WebRTC] Ignorando respuesta en estado incorrecto:", this.pc.signalingState);
-          }
+          console.log("[WebRTC] Procesando respuesta");
+          await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
           try {
-            if (this.pc.remoteDescription) {
-              await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
-              console.log("[WebRTC] Candidato ICE agregado exitosamente");
-            } else {
-              console.log("[WebRTC] Guardando candidato ICE para más tarde - sin descripción remota");
+            if (message.payload) {
+              console.log("[WebRTC] Agregando candidato ICE");
+              await this.pc.addIceCandidate(message.payload);
             }
           } catch (err) {
-            console.warn("[WebRTC] Error al agregar candidato ICE:", err);
+            if (!this.ignoreOffer) {
+              console.error("[WebRTC] Error al agregar candidato ICE:", err);
+              throw err;
+            }
           }
           break;
       }
@@ -127,8 +128,6 @@ export class WebRTCConnection {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
         {
           urls: "turn:relay.metered.ca:80",
           username: "83c02581d3f4af5d3446bc3c",
@@ -138,22 +137,10 @@ export class WebRTCConnection {
           urls: "turn:relay.metered.ca:443",
           username: "83c02581d3f4af5d3446bc3c",
           credential: "L8YGPMtaJJ+tNcYK",
-        },
-        {
-          urls: "turn:relay.metered.ca:443?transport=tcp",
-          username: "83c02581d3f4af5d3446bc3c",
-          credential: "L8YGPMtaJJ+tNcYK",
         }
       ],
-      iceTransportPolicy: "all",
-      iceCandidatePoolSize: 10,
-      bundlePolicy: "max-bundle",
-      rtcpMuxPolicy: "require"
+      iceCandidatePoolSize: 10
     };
-
-    if (this.pc) {
-      this.pc.close();
-    }
 
     this.pc = new RTCPeerConnection(configuration);
 
@@ -168,12 +155,28 @@ export class WebRTCConnection {
     };
 
     this.pc.oniceconnectionstatechange = () => {
-      const state = this.pc.iceConnectionState;
-      console.log("[WebRTC] Estado de conexión ICE:", state);
-
-      if (state === 'failed' || state === 'disconnected') {
-        console.log("[WebRTC] Reintentando conexión ICE...");
+      console.log("[WebRTC] Estado de conexión ICE:", this.pc.iceConnectionState);
+      if (this.pc.iceConnectionState === 'failed') {
         this.pc.restartIce();
+      }
+    };
+
+    this.pc.onnegotiationneeded = async () => {
+      try {
+        this.makingOffer = true;
+        console.log("[WebRTC] Negociación necesaria, creando oferta");
+        const offer = await this.pc.createOffer();
+        if (this.pc.signalingState !== "stable") return;
+
+        await this.pc.setLocalDescription(offer);
+        this.sendSignaling({
+          type: "offer",
+          payload: this.pc.localDescription
+        });
+      } catch (err) {
+        console.error("[WebRTC] Error en negociación:", err);
+      } finally {
+        this.makingOffer = false;
       }
     };
 
@@ -186,20 +189,14 @@ export class WebRTCConnection {
     };
 
     this.pc.onconnectionstatechange = () => {
-      const state = this.pc.connectionState;
-      console.log("[WebRTC] Estado de conexión:", state);
-      this.onConnectionStateChange(state);
-
-      if (state === 'failed') {
-        this.handleReconnect();
-      }
+      console.log("[WebRTC] Estado de conexión:", this.pc.connectionState);
+      this.onConnectionStateChange(this.pc.connectionState);
     };
   }
 
   async start(videoEnabled: boolean) {
     try {
       console.log("[WebRTC] Iniciando con video:", videoEnabled);
-      this.isInitiator = true;
 
       const constraints: MediaStreamConstraints = {
         video: videoEnabled ? {
@@ -223,22 +220,6 @@ export class WebRTCConnection {
         }
       });
 
-      if (this.isInitiator) {
-        console.log("[WebRTC] Creando oferta como iniciador");
-        const offer = await this.pc.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true
-        });
-
-        console.log("[WebRTC] Estado antes de establecer oferta local:", this.pc.signalingState);
-        await this.pc.setLocalDescription(offer);
-
-        this.sendSignaling({
-          type: "offer",
-          payload: offer
-        });
-      }
-
       return this.stream;
     } catch (err) {
       console.error("[WebRTC] Error al iniciar:", err);
@@ -249,6 +230,7 @@ export class WebRTCConnection {
 
   private sendSignaling(message: SignalingMessage) {
     if (this.ws.readyState === WebSocket.OPEN) {
+      console.log("[WebRTC] Enviando mensaje:", message.type);
       this.ws.send(JSON.stringify(message));
     } else {
       console.error("[WebRTC] WebSocket no está abierto al intentar enviar mensaje");
