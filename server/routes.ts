@@ -55,18 +55,23 @@ const translations: Record<string, Record<string, string>> = {
   }
 };
 
-// Mejorada la función de traducción para simular mejor
 const translateText = (text: string, from: string, to: string) => {
+  console.log(`[Translate] Traduciendo: "${text}" de ${from} a ${to}`);
+
   // Si el idioma de origen y destino son iguales, no traducimos
-  if (from === to) return text;
+  if (from === to) {
+    console.log("[Translate] Mismo idioma, retornando texto original");
+    return text;
+  }
 
   // Normalizar el texto a minúsculas para mejor coincidencia
   const lowerText = text.toLowerCase();
 
   // Buscar traducciones exactas primero
   if (translations[from] && translations[from][lowerText]) {
-    console.log(`[Translate] Traducción exacta encontrada: ${text} -> ${translations[from][lowerText]}`);
-    return translations[from][lowerText];
+    const translated = translations[from][lowerText];
+    console.log(`[Translate] Traducción exacta encontrada: ${text} -> ${translated}`);
+    return translated;
   }
 
   // Si no hay traducción exacta, aplicar reglas de traducción
@@ -102,8 +107,6 @@ const translateText = (text: string, from: string, to: string) => {
       .replace(/bene/g, 'bien')
       .replace(/male/g, 'mal');
 
-  // Agregar prefijo para indicar el idioma
-  translated = `[${to.toUpperCase()}] ${translated}`;
   console.log(`[Translate] Traducción generada: ${text} -> ${translated}`);
   return translated;
 };
@@ -130,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { text, from, to } = result.data;
       const translated = translateText(text, from, to);
-      console.log(`[Translate] ${text} (${from}) -> ${translated} (${to})`);
+      console.log(`[Translate] Texto traducido: "${text}" (${from}) -> "${translated}" (${to})`);
       res.json({ translated });
     } catch (error) {
       console.error("[Translate] Error:", error);
@@ -147,7 +150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     console.log("[WebSocket] Nueva conexión establecida");
 
-    ws.on("message", (data) => {
+    ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
         console.log("[WebSocket] Mensaje recibido:", message.type, "para sala:", currentRoom);
@@ -164,6 +167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`[WebSocket] Cliente añadido a sala ${roomId}. Total clientes: ${rooms.get(roomId)!.size}`);
         } else if (message.type === "translation" || message.type === "offer" ||
           message.type === "answer" || message.type === "ice-candidate") {
+
           if (!currentRoom || !rooms.has(currentRoom)) {
             console.warn("[WebSocket] Cliente no está en ninguna sala");
             return;
@@ -172,11 +176,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const clientsInRoom = rooms.get(currentRoom)!;
           console.log(`[WebSocket] Enviando mensaje tipo ${message.type} a ${clientsInRoom.size - 1} clientes en sala ${currentRoom}`);
 
-          clientsInRoom.forEach((client) => {
+          if (message.type === "translation") {
+            // Para mensajes de traducción, asegurarse de que el receptor reciba la traducción
+            const translationMsg = message as TranslationMessage;
+            console.log(`[WebSocket] Mensaje de traducción: ${translationMsg.text} -> ${translationMsg.translated}`);
+          }
+
+          for (const client of clientsInRoom) {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(data.toString());
             }
-          });
+          }
         }
       } catch (err) {
         console.error("[WebSocket] Error procesando mensaje:", err);

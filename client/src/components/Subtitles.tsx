@@ -24,13 +24,11 @@ export default function Subtitles({ transcript, config }: Props) {
   };
 
   return (
-    <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
-      <div 
-        className="text-center"
-        style={subtitleStyle}
-      >
-        {transcript}
-      </div>
+    <div 
+      className="text-center"
+      style={subtitleStyle}
+    >
+      {transcript}
     </div>
   );
 }

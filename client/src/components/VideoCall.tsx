@@ -39,13 +39,25 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
   useEffect(() => {
     const handleSpeechResult = (text: string, isLocal: boolean) => {
+      console.log("[VideoCall] Recibido texto:", text, "isLocal:", isLocal);
       if (isLocal) {
         setLocalTranscript(text);
-        setRemoteTranscript(""); // Limpiar el transcript remoto cuando hablamos
+        // No limpiamos el transcript remoto cuando hablamos localmente
+        // para permitir que ambos vean sus respectivos mensajes
       } else {
         setRemoteTranscript(text);
-        setLocalTranscript(""); // Limpiar el transcript local cuando recibimos
+        // No limpiamos el transcript local cuando recibimos
+        // para permitir que ambos mensajes se muestren
       }
+
+      // Limpiar los transcripts después de un tiempo
+      setTimeout(() => {
+        if (isLocal) {
+          setLocalTranscript("");
+        } else {
+          setRemoteTranscript("");
+        }
+      }, 5000); // 5 segundos
     };
 
     const speech = new SpeechHandler(
@@ -208,10 +220,21 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        <Subtitles
-          transcript={localTranscript || remoteTranscript}
-          config={subtitlesConfig}
-        />
+        {/* Mostrar subtítulos locales y remotos por separado */}
+        <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
+          {localTranscript && (
+            <Subtitles
+              transcript={localTranscript}
+              config={{...subtitlesConfig, color: "yellow"}} // Color diferente para distinguir
+            />
+          )}
+          {remoteTranscript && (
+            <Subtitles
+              transcript={remoteTranscript}
+              config={subtitlesConfig}
+            />
+          )}
+        </div>
       </div>
 
       <CallControls

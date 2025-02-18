@@ -49,12 +49,10 @@ export class SpeechHandler {
       this.reconnectAttempts++;
       console.log(`[Speech] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
 
-      // Limpiar timeout anterior si existe
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
       }
 
-      // Exponential backoff
       const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
       this.reconnectTimeout = setTimeout(() => {
         this.initializeWebSocket();
@@ -120,6 +118,10 @@ export class SpeechHandler {
     };
 
     this.recognition.onerror = (event: any) => {
+      if (event.error === 'no-speech') {
+        // Ignorar este error ya que es común cuando no hay habla
+        return;
+      }
       console.error("[Speech] Error en reconocimiento:", event.error);
       this.onError?.(new Error(`Error en reconocimiento de voz: ${event.error}`));
     };

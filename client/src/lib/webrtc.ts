@@ -7,6 +7,7 @@ export class WebRTCConnection {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout?: NodeJS.Timeout;
+  private isInitiator: boolean = false;
 
   constructor(
     private roomId: string,
@@ -49,13 +50,11 @@ export class WebRTCConnection {
       this.reconnectAttempts++;
       console.log(`[WebRTC] Intento de reconexión ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
 
-      // Exponential backoff
-      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
-
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
       }
 
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000);
       this.reconnectTimeout = setTimeout(() => {
         this.initializePeerConnection();
         this.initializeWebSocket();
@@ -69,10 +68,15 @@ export class WebRTCConnection {
   private async handleWebSocketMessage(event: MessageEvent) {
     try {
       const message: SignalingMessage = JSON.parse(event.data);
-      console.log("[WebRTC] Mensaje recibido:", message.type);
+      console.log("[WebRTC] Mensaje recibido:", message.type, "Estado:", this.pc.signalingState);
 
       switch (message.type) {
         case "offer":
+          if (this.pc.signalingState !== "stable") {
+            console.log("[WebRTC] Ignorando oferta en estado no estable");
+            return;
+          }
+          this.isInitiator = false;
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
@@ -83,12 +87,22 @@ export class WebRTCConnection {
           break;
 
         case "answer":
+          if (this.pc.signalingState !== "have-local-offer") {
+            console.log("[WebRTC] Ignorando respuesta sin oferta local");
+            return;
+          }
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
           if (this.pc.remoteDescription) {
-            await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
+            try {
+              await this.pc.addIceCandidate(new RTCIceCandidate(message.payload));
+            } catch (err) {
+              console.warn("[WebRTC] Error al agregar candidato ICE:", err);
+            }
+          } else {
+            console.log("[WebRTC] Ignorando candidato ICE sin descripción remota");
           }
           break;
       }
@@ -177,6 +191,7 @@ export class WebRTCConnection {
   async start(videoEnabled: boolean) {
     try {
       console.log("[WebRTC] Iniciando con video:", videoEnabled);
+      this.isInitiator = true;
 
       const constraints: MediaStreamConstraints = {
         video: videoEnabled ? {
@@ -203,12 +218,16 @@ export class WebRTCConnection {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       });
-      await this.pc.setLocalDescription(offer);
 
-      this.sendSignaling({
-        type: "offer",
-        payload: offer
-      });
+      if (this.pc.signalingState === "stable") {
+        await this.pc.setLocalDescription(offer);
+        this.sendSignaling({
+          type: "offer",
+          payload: offer
+        });
+      } else {
+        console.warn("[WebRTC] No se puede crear oferta en estado:", this.pc.signalingState);
+      }
 
       return this.stream;
     } catch (err) {
