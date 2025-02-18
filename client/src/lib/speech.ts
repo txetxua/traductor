@@ -1,6 +1,3 @@
-/// <reference lib="dom" />
-/// <reference lib="dom.iterable" />
-
 import { type Language, type TranslationMessage } from "@shared/schema";
 
 declare global {
@@ -60,6 +57,24 @@ export class SpeechHandler {
     };
     this.recognition.lang = langMap[this.language];
 
+    this.recognition.onstart = () => {
+      console.log("Speech recognition started");
+      this.isStarted = true;
+    };
+
+    this.recognition.onend = () => {
+      console.log("Speech recognition ended");
+      // Reiniciar si todavía está activo
+      if (this.isStarted) {
+        console.log("Restarting speech recognition");
+        setTimeout(() => {
+          if (this.isStarted) {
+            this.recognition.start();
+          }
+        }, 1000);
+      }
+    };
+
     this.recognition.onresult = async (event: any) => {
       const text = event.results[event.results.length - 1][0].transcript;
       console.log("Speech recognized:", text);
@@ -100,19 +115,13 @@ export class SpeechHandler {
 
     this.recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
-      if (this.isStarted) {
-        console.log("Restarting speech recognition after error");
-        this.stop();
-        this.start();
-      }
-    };
-
-    this.recognition.onend = () => {
-      console.log("Speech recognition ended");
-      // Reiniciar si todavía está activo
-      if (this.isStarted) {
-        console.log("Restarting speech recognition");
-        this.recognition.start();
+      if (event.error === 'no-speech') {
+        // Reiniciar el reconocimiento después de un tiempo
+        if (this.isStarted) {
+          console.log("Restarting speech recognition after error");
+          this.stop();
+          setTimeout(() => this.start(), 1000);
+        }
       }
     };
   }
@@ -121,7 +130,11 @@ export class SpeechHandler {
     if (this.recognition && !this.isStarted) {
       console.log("Starting speech recognition");
       this.isStarted = true;
-      this.recognition.start();
+      try {
+        this.recognition.start();
+      } catch (error) {
+        console.error("Error starting speech recognition:", error);
+      }
     }
   }
 
@@ -129,7 +142,11 @@ export class SpeechHandler {
     if (this.recognition) {
       console.log("Stopping speech recognition");
       this.isStarted = false;
-      this.recognition.stop();
+      try {
+        this.recognition.stop();
+      } catch (error) {
+        console.error("Error stopping speech recognition:", error);
+      }
     }
     this.ws.close();
   }
