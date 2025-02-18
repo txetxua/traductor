@@ -55,10 +55,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     let mounted = true;
 
     const handleSpeechResult = (text: string, isLocal: boolean) => {
-      if (!mounted) return;
-      // Only show remote transcripts
+      // Only display remote transcripts
       if (!isLocal) {
-        console.log("[VideoCall] Receiving remote text:", text);
+        console.log("[VideoCall] Remote transcript received:", text);
         setRemoteTranscript(text);
         clearTranscriptAfterDelay();
       }
@@ -70,7 +69,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       handleSpeechResult,
       (error: Error) => {
         if (!mounted) return;
-        console.error("[VideoCall] Error in SpeechHandler:", error);
+        console.error("[VideoCall] Speech error:", error);
         toast({
           variant: "destructive",
           title: "Error in speech recognition",
