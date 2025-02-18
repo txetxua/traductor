@@ -1,62 +1,143 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>WebSocket Test</title>
+  <title>Prueba de WebSocket</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #status { margin: 10px 0; padding: 10px; border-radius: 4px; }
+    .connected { background-color: #dff0d8; color: #3c763d; }
+    .connecting { background-color: #fcf8e3; color: #8a6d3b; }
+    .error { background-color: #f2dede; color: #a94442; }
+    #messages { 
+      height: 300px; 
+      overflow-y: auto; 
+      border: 1px solid #ccc; 
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .message { margin: 5px 0; }
+    .error-msg { color: red; }
+  </style>
 </head>
 <body>
-  <h1>WebSocket Test</h1>
-  <div id="status"></div>
+  <h1>Prueba de WebSocket</h1>
+  <div id="status">Conectando...</div>
+  <div>
+    <button onclick="sendTestMessage()">Enviar mensaje de prueba</button>
+    <button onclick="reconnect()">Reconectar</button>
+  </div>
   <div id="messages"></div>
 
   <script>
     const statusDiv = document.getElementById('status');
     const messagesDiv = document.getElementById('messages');
+    let ws = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
 
-    function log(message) {
+    function log(message, isError = false) {
       const div = document.createElement('div');
+      div.className = `message ${isError ? 'error-msg' : ''}`;
       div.textContent = `${new Date().toISOString()} - ${message}`;
       messagesDiv.appendChild(div);
-      console.log(message);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      console.log(isError ? 'Error:' : 'Log:', message);
+    }
+
+    function updateStatus(status, className) {
+      statusDiv.textContent = status;
+      statusDiv.className = className;
     }
 
     function connect() {
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const wsUrl = `${protocol}//${window.location.host}/ws`;
-      
-      log(`Connecting to ${wsUrl}`);
-      statusDiv.textContent = 'Connecting...';
-      
-      const ws = new WebSocket(wsUrl);
 
-      ws.onopen = () => {
-        log('Connected successfully');
-        statusDiv.textContent = 'Connected';
-        
-        // Send test message
-        ws.send(JSON.stringify({
-          type: 'join',
-          roomId: 'test-room'
-        }));
-      };
+      log(`Conectando a ${wsUrl}`);
+      updateStatus('Conectando...', 'connecting');
 
-      ws.onmessage = (event) => {
-        log(`Received message: ${event.data}`);
-      };
+      try {
+        ws = new WebSocket(wsUrl);
 
-      ws.onerror = (error) => {
-        log(`WebSocket error: ${error}`);
-        statusDiv.textContent = 'Error';
-      };
+        ws.onopen = () => {
+          log('Conexión establecida exitosamente');
+          updateStatus('Conectado', 'connected');
+          reconnectAttempts = 0;
 
-      ws.onclose = () => {
-        log('Connection closed');
-        statusDiv.textContent = 'Disconnected';
-        
-        // Try to reconnect after 5 seconds
-        setTimeout(connect, 5000);
-      };
+          // Enviar mensaje de prueba
+          sendTestMessage();
+        };
+
+        ws.onmessage = (event) => {
+          log(`Mensaje recibido: ${event.data}`);
+          try {
+            const data = JSON.parse(event.data);
+            log(`Mensaje parseado: ${JSON.stringify(data, null, 2)}`);
+          } catch (e) {
+            log(`Error al parsear mensaje: ${e.message}`, true);
+          }
+        };
+
+        ws.onerror = (error) => {
+          log(`Error de WebSocket: ${error}`, true);
+          updateStatus('Error', 'error');
+        };
+
+        ws.onclose = (event) => {
+          log(`Conexión cerrada. Código: ${event.code}, Razón: ${event.reason}`);
+          updateStatus('Desconectado', 'error');
+          handleReconnect();
+        };
+
+      } catch (error) {
+        log(`Error al crear WebSocket: ${error.message}`, true);
+        updateStatus('Error al crear conexión', 'error');
+        handleReconnect();
+      }
     }
 
+    function handleReconnect() {
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+        log(`Intentando reconexión ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} en ${delay}ms`);
+
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+        }
+
+        reconnectTimer = setTimeout(connect, delay);
+      } else {
+        log('Se alcanzó el máximo número de intentos de reconexión', true);
+        updateStatus('Reconexión fallida', 'error');
+      }
+    }
+
+    function reconnect() {
+      reconnectAttempts = 0;
+      connect();
+    }
+
+    function sendTestMessage() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const testMessage = {
+          type: 'join',
+          roomId: 'test-room'
+        };
+        log(`Enviando mensaje: ${JSON.stringify(testMessage)}`);
+        ws.send(JSON.stringify(testMessage));
+      } else {
+        log('No se puede enviar mensaje - WebSocket no está conectado', true);
+      }
+    }
+
+    // Iniciar conexión
     connect();
   </script>
 </body>

@@ -1,10 +1,9 @@
 import { type SignalingMessage } from "@shared/schema";
-import { WebSocketHandler } from "./websocket";
 
 export class WebRTCConnection {
   private pc!: RTCPeerConnection;
   private stream?: MediaStream;
-  private ws: WebSocketHandler;
+  private pollingInterval: number | null = null;
 
   constructor(
     private roomId: string,
@@ -14,52 +13,72 @@ export class WebRTCConnection {
   ) {
     console.log("[WebRTC] Initializing for room:", roomId);
     this.initializePeerConnection();
-
-    // Inicializar WebSocket con manejo asíncrono
-    this.ws = new WebSocketHandler(roomId, (error) => {
-      console.error("[WebRTC] WebSocket error:", error);
-      this.onError(error);
-    });
-
-    // Configurar handlers de mensajes WebSocket
-    this.setupWebSocketHandlers();
+    this.startPolling();
   }
 
-  private setupWebSocketHandlers() {
-    this.ws.onMessage("offer", async (message) => {
+  private getApiBaseUrl(): string {
+    return window.location.origin;
+  }
+
+  private async startPolling() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
+
+    this.pollingInterval = window.setInterval(async () => {
       try {
+        const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`);
+        if (!response.ok) {
+          throw new Error(`Polling failed: ${response.status}`);
+        }
+
+        const messages: SignalingMessage[] = await response.json();
+        for (const message of messages) {
+          await this.handleSignalingMessage(message);
+        }
+      } catch (error) {
+        console.error("[WebRTC] Polling error:", error);
+        this.onError(error as Error);
+      }
+    }, 1000) as unknown as number;
+  }
+
+  private async handleSignalingMessage(message: SignalingMessage) {
+    try {
+      if (message.type === "offer") {
         await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
-        await this.ws.send({
+        await this.sendSignal({
           type: "answer",
           payload: answer
         });
-      } catch (err) {
-        console.error("[WebRTC] Error handling offer:", err);
-        this.onError(err as Error);
-      }
-    });
-
-    this.ws.onMessage("answer", async (message) => {
-      try {
+      } else if (message.type === "answer") {
         await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-      } catch (err) {
-        console.error("[WebRTC] Error handling answer:", err);
-        this.onError(err as Error);
+      } else if (message.type === "ice-candidate" && message.payload) {
+        await this.pc.addIceCandidate(message.payload);
       }
-    });
+    } catch (error) {
+      console.error("[WebRTC] Error handling signal:", error);
+      this.onError(error as Error);
+    }
+  }
 
-    this.ws.onMessage("ice-candidate", async (message) => {
-      if (message.payload) {
-        try {
-          await this.pc.addIceCandidate(message.payload);
-        } catch (err) {
-          console.error("[WebRTC] Error adding ICE candidate:", err);
-          this.onError(err as Error);
-        }
+  private async sendSignal(message: SignalingMessage) {
+    try {
+      const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(message)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to send signal: ${response.status}`);
       }
-    });
+    } catch (error) {
+      console.error("[WebRTC] Error sending signal:", error);
+      this.onError(error as Error);
+    }
   }
 
   private initializePeerConnection() {
@@ -75,7 +94,7 @@ export class WebRTCConnection {
     this.pc.onicecandidate = async ({ candidate }) => {
       if (candidate) {
         try {
-          await this.ws.send({
+          await this.sendSignal({
             type: "ice-candidate",
             payload: candidate
           });
@@ -107,7 +126,7 @@ export class WebRTCConnection {
       try {
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
-        await this.ws.send({
+        await this.sendSignal({
           type: "offer",
           payload: offer
         });
@@ -141,6 +160,10 @@ export class WebRTCConnection {
     console.log("[WebRTC] Closing connection");
     this.stream?.getTracks().forEach(track => track.stop());
     this.pc.close();
-    this.ws.close();
+
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
   }
 }

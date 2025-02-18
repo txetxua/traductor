@@ -1,9 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import { 
-  type WebSocketMessage, 
   type SignalingMessage,
   type TranslationMessage 
 } from "@shared/schema";
@@ -24,132 +22,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }>>();
 
   const httpServer = createServer(app);
-  const rooms = new Map<string, Set<WebSocket>>();
 
-  const wss = new WebSocketServer({ 
-    server: httpServer,
-    path: '/ws',
-    clientTracking: true,
-    perMessageDeflate: false
+  // Store pending signals for each room
+  const pendingSignals = new Map<string, SignalingMessage[]>();
+
+  app.get("/api/signal/:roomId", (req, res) => {
+    const roomId = req.params.roomId;
+    const signals = pendingSignals.get(roomId) || [];
+    pendingSignals.set(roomId, []); // Clear signals after sending
+    res.json(signals);
   });
 
-  wss.on("error", (error) => {
-    console.error("[WebSocket Server] Error:", error);
-  });
+  app.post("/api/signal/:roomId", (req, res) => {
+    const roomId = req.params.roomId;
+    const signal = req.body as SignalingMessage;
 
-  console.log("[WebSocket] Server initialized on /ws");
+    if (!pendingSignals.has(roomId)) {
+      pendingSignals.set(roomId, []);
+    }
 
-  wss.on("connection", (ws, req) => {
-    // Log detailed connection information
-    console.log("[WebSocket] New connection details:", {
-      headers: req.headers,
-      url: req.url,
-      remoteAddress: req.socket.remoteAddress
-    });
-
-    ws.on("error", (error) => {
-      console.error("[WebSocket] Client error:", error);
-    });
-
-    let currentRoom: string | null = null;
-    let pingInterval: NodeJS.Timeout;
-
-    // Set up ping interval
-    pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.ping();
-      }
-    }, 30000);
-
-    ws.on("pong", () => {
-      console.log("[WebSocket] Client is alive");
-    });
-
-    ws.on("message", async (data) => {
-      try {
-        const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Message received:", message);
-
-        if (message.type === "join") {
-          if (!message.roomId) {
-            ws.send(JSON.stringify({ type: "error", error: "Room ID required" }));
-            return;
-          }
-
-          // Leave previous room if any
-          if (currentRoom) {
-            const oldRoom = rooms.get(currentRoom);
-            if (oldRoom) {
-              oldRoom.delete(ws);
-              if (oldRoom.size === 0) {
-                rooms.delete(currentRoom);
-              }
-            }
-          }
-
-          // Join new room
-          if (!rooms.has(message.roomId)) {
-            rooms.set(message.roomId, new Set());
-          }
-
-          const roomClients = rooms.get(message.roomId)!;
-          roomClients.add(ws);
-          currentRoom = message.roomId;
-
-          console.log(`[WebSocket] Client joined room ${message.roomId}, total clients: ${roomClients.size}`);
-
-          // Send joined confirmation
-          ws.send(JSON.stringify({ 
-            type: "joined", 
-            roomId: message.roomId,
-            clients: roomClients.size 
-          }));
-          return;
-        }
-
-        if (!currentRoom) {
-          ws.send(JSON.stringify({ type: "error", error: "Not in a room" }));
-          return;
-        }
-
-        // Handle WebRTC signaling messages
-        if (["offer", "answer", "ice-candidate"].includes(message.type)) {
-          const roomClients = rooms.get(currentRoom);
-          if (!roomClients) {
-            console.error("[WebSocket] Room not found:", currentRoom);
-            return;
-          }
-
-          // Broadcast to other clients in the room
-          roomClients.forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(message));
-            }
-          });
-        }
-
-      } catch (error) {
-        console.error("[WebSocket] Error processing message:", error);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "error", error: "Invalid message format" }));
-        }
-      }
-    });
-
-    ws.on("close", () => {
-      clearInterval(pingInterval);
-
-      if (currentRoom) {
-        const roomClients = rooms.get(currentRoom);
-        if (roomClients) {
-          roomClients.delete(ws);
-          console.log(`[WebSocket] Client left room ${currentRoom}, remaining: ${roomClients.size}`);
-          if (roomClients.size === 0) {
-            rooms.delete(currentRoom);
-          }
-        }
-      }
-    });
+    pendingSignals.get(roomId)!.push(signal);
+    res.status(200).json({ status: "ok" });
   });
 
   app.get("/api/translations/stream/:roomId", (req, res) => {

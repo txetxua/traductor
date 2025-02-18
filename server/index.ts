@@ -3,12 +3,14 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
 // CORS middleware specifically configured for WebSocket support
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
+
+  // Log detailed request information for debugging
+  console.log("[Server] Request headers:", req.headers);
+  console.log("[Server] Request path:", req.path);
 
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -17,6 +19,7 @@ app.use((req, res, next) => {
 
   // Handle WebSocket upgrade requests
   if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+    console.log("[Server] Processing WebSocket upgrade request");
     res.header('Connection', 'Upgrade');
     res.header('Upgrade', 'websocket');
   }
@@ -27,6 +30,10 @@ app.use((req, res, next) => {
     next();
   }
 });
+
+// Basic middleware setup
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // Enhanced logging middleware
 app.use((req, res, next) => {
