@@ -7,8 +7,8 @@ interface Props {
 }
 
 export default function Subtitles({ transcript, translated, config }: Props) {
-  // Solo mostramos cuando hay una traducción
-  if (!translated) return null;
+  // No mostrar nada si no hay texto para mostrar
+  if (!transcript && !translated) return null;
 
   const subtitleStyle = {
     fontSize: `${config.fontSize}px`,
@@ -25,12 +25,22 @@ export default function Subtitles({ transcript, translated, config }: Props) {
 
   return (
     <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
-      <div 
-        className="text-center"
-        style={subtitleStyle}
-      >
-        {translated}
-      </div>
+      {transcript && (
+        <div 
+          className="text-center"
+          style={subtitleStyle}
+        >
+          {transcript}
+        </div>
+      )}
+      {translated && (
+        <div
+          className="text-center"
+          style={subtitleStyle}
+        >
+          {translated}
+        </div>
+      )}
     </div>
   );
 }

@@ -33,8 +33,8 @@ export class SpeechHandler {
           // Solo mostramos mensajes que vienen del otro participante
           if (translationMsg.from !== this.language) {
             console.log("[Speech] Traducción recibida del otro participante:", translationMsg);
-            // Para el receptor, mostramos solo la traducción
-            this.onTranscript("", translationMsg.translated);
+            // Mostramos la traducción para el receptor
+            this.onTranscript(translationMsg.text, translationMsg.translated);
           }
         }
       } catch (error) {
@@ -100,16 +100,16 @@ export class SpeechHandler {
         const { translated } = await response.json();
         console.log("[Speech] Traducción recibida del servidor:", translated);
 
-        // El emisor no ve nada en su pantalla
-        this.onTranscript("", "");
+        // Para el emisor, mostramos el texto original
+        this.onTranscript(text, "");
 
         // Enviar al otro participante
         if (this.ws.readyState === WebSocket.OPEN) {
           const message: TranslationMessage = {
             type: "translation",
-            text: text,  // texto original
+            text: text,
             from: this.language,
-            translated: translated  // texto traducido
+            translated: translated
           };
           this.ws.send(JSON.stringify(message));
         }
