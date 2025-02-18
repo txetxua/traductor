@@ -35,6 +35,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [cameraError, setCameraError] = useState<string>();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
 
   // Timer para limpiar los subtítulos
   const timerRef = useRef<NodeJS.Timeout>();
@@ -49,7 +51,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const handleSpeechResult = (text: string, isLocal: boolean) => {
+      if (!mounted) return;
       console.log("[VideoCall] Recibiendo texto:", text, "isLocal:", isLocal);
       setTranscript(text);
       clearTranscriptAfterDelay();
@@ -60,6 +65,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       language,
       handleSpeechResult,
       (error: Error) => {
+        if (!mounted) return;
         console.error("[VideoCall] Error en SpeechHandler:", error);
         toast({
           variant: "destructive",
@@ -69,25 +75,52 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       }
     );
 
-    const handleError = (error: Error) => {
+    const handleError = async (error: Error) => {
+      if (!mounted) return;
       console.error("[VideoCall] Error:", error);
+
       if (error.name === 'NotAllowedError') {
-        setCameraError('No se ha dado permiso para acceder a la cámara');
+        setCameraError('No se ha dado permiso para acceder a la cámara o micrófono');
       } else if (error.name === 'NotFoundError') {
-        setCameraError('No se encontró ninguna cámara');
+        setCameraError('No se encontró ninguna cámara o micrófono');
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        setCameraError('El dispositivo está en uso por otra aplicación');
       } else {
         setCameraError(error.message);
       }
 
-      toast({
-        variant: "destructive",
-        title: "Error en la llamada",
-        description: error.message,
-      });
+      // Intento de reconexión si es un error recuperable
+      if (retryCount < maxRetries && 
+          (error.name === 'NotReadableError' || 
+           error.name === 'TrackStartError' || 
+           error.message.includes('failed to connect'))) {
+        setRetryCount(prev => prev + 1);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        if (mounted) {
+          initializeCall();
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error en la llamada",
+          description: error.message,
+        });
+      }
     };
 
     async function initializeCall() {
+      if (!mounted) return;
       try {
+        // Limpiar cualquier error anterior
+        setCameraError(undefined);
+
+        // Verificar permisos primero
+        const permissions = await navigator.mediaDevices.getUserMedia({ 
+          video: videoEnabled, 
+          audio: true 
+        });
+        permissions.getTracks().forEach(track => track.stop());
+
         const devices = await navigator.mediaDevices.enumerateDevices();
         const hasCamera = devices.some(device => device.kind === 'videoinput');
         const hasMicrophone = devices.some(device => device.kind === 'audioinput');
@@ -103,12 +136,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         const webrtc = new WebRTCConnection(
           roomId,
           (stream) => {
+            if (!mounted) return;
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = stream;
               remoteVideoRef.current.play().catch(console.error);
             }
           },
           (state) => {
+            if (!mounted) return;
             console.log("[VideoCall] Estado de conexión:", state);
             setConnectionState(state);
 
@@ -123,6 +158,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
                 title: "Conectado",
                 description: "La conexión se ha establecido correctamente.",
               });
+              // Resetear el contador de reintentos cuando la conexión es exitosa
+              setRetryCount(0);
             }
           },
           handleError
@@ -154,13 +191,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     initializeCall();
 
     return () => {
+      mounted = false;
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
       webrtcRef.current?.close();
       speechRef.current?.stop();
     };
-  }, [roomId, language, toast, videoEnabled, audioEnabled]);
+  }, [roomId, language, toast, videoEnabled, audioEnabled, retryCount]);
 
   const handleHangup = () => {
     webrtcRef.current?.close();

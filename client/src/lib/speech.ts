@@ -84,11 +84,9 @@ export class SpeechHandler {
         const translationMsg = message as TranslationMessage;
         console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Si el mensaje viene del italiano (from === "it") y yo soy español (language === "es")
-        // O si el mensaje viene del español (from === "es") y yo soy italiano (language === "it")
-        if ((translationMsg.from === "it" && this.language === "es") ||
-            (translationMsg.from === "es" && this.language === "it")) {
-          console.log(`[Speech] Mostrando traducción de ${translationMsg.from} a ${this.language}:`, translationMsg.translated);
+        // Si el mensaje viene de un idioma diferente al mío, muestro la traducción
+        if (translationMsg.from !== this.language) {
+          console.log(`[Speech] Mostrando traducción del mensaje de ${translationMsg.from} en mi idioma (${this.language}):`, translationMsg.translated);
           this.onTranscript(translationMsg.translated, false);
         }
       }
@@ -163,7 +161,7 @@ export class SpeechHandler {
       // Determinamos el idioma de destino basado en el idioma actual
       const targetLanguage = this.language === "es" ? "it" : "es";
 
-      // Traducimos y enviamos el mensaje
+      // Traducimos el texto
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: {
@@ -183,12 +181,13 @@ export class SpeechHandler {
       const { translated } = await response.json();
       console.log(`[Speech] Texto traducido de ${this.language} a ${targetLanguage}:`, translated);
 
+      // Enviamos el mensaje traducido
       if (this.ws.readyState === WebSocket.OPEN) {
         const message: TranslationMessage = {
           type: "translation",
-          text: text,
+          text,
           from: this.language,
-          translated: translated
+          translated
         };
         console.log("[Speech] Enviando mensaje de traducción:", message);
         this.ws.send(JSON.stringify(message));
