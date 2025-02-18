@@ -49,7 +49,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const roomId = req.params.roomId;
     const language = req.query.language as string;
 
+    console.log("[Translations] New SSE connection request:", {
+      roomId,
+      language,
+      headers: req.headers
+    });
+
     if (!roomId || !language || !["es", "it"].includes(language)) {
+      console.error("[Translations] Invalid request parameters:", { roomId, language });
       res.status(400).json({ error: "Invalid room ID or language" });
       return;
     }
@@ -72,9 +79,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const client = { res, language, keepAliveInterval };
     sseClients.get(roomId)!.add(client);
 
+    console.log("[Translations] Client connected:", {
+      roomId,
+      language,
+      totalClients: sseClients.get(roomId)?.size
+    });
+
     res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
 
     req.on("close", () => {
+      console.log("[Translations] Client disconnected:", { roomId, language });
       clearInterval(keepAliveInterval);
       const roomClients = sseClients.get(roomId);
       if (roomClients) {
@@ -82,6 +96,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (roomClients.size === 0) {
           sseClients.delete(roomId);
         }
+        console.log("[Translations] Remaining clients in room:", roomClients.size);
       }
     });
   });
@@ -90,17 +105,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const result = translateSchema.safeParse(req.body);
       if (!result.success) {
+        console.error("[Translate] Invalid request:", result.error);
         return res.status(400).json({ error: "Invalid translation request" });
       }
 
       const { text, from, to, roomId } = result.data;
-      console.log(`[Translate] Processing translation from ${from} to ${to}`);
+      console.log(`[Translate] Processing translation from ${from} to ${to}:`, text);
 
       const translated = await translateText(text, from, to);
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
       const roomClients = sseClients.get(roomId);
       if (roomClients) {
+        console.log("[Translate] Broadcasting to room clients:", roomClients.size);
+
         const message: TranslationMessage = {
           type: "translation",
           text,
@@ -110,7 +128,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
 
         roomClients.forEach(client => {
-          client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+          try {
+            client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+          } catch (error) {
+            console.error("[Translate] Error sending to client:", error);
+          }
         });
       }
 
