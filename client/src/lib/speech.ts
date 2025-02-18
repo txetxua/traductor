@@ -64,16 +64,15 @@ export class SpeechHandler {
       const message = JSON.parse(event.data);
       if (message.type === "translation") {
         const translationMsg = message as TranslationMessage;
-        console.log("[Speech] Mensaje de traducción recibido:", translationMsg);
 
-        // Si somos el receptor (italiano), mostramos los mensajes que vienen del emisor (español)
+        // Si somos el receptor (italiano), mostramos los mensajes originales del emisor (español)
         if (this.language === "it" && translationMsg.from === "es") {
-          console.log("[Speech] Mostrando texto original en italiano");
+          console.log("[Speech] (Receptor) Mostrando texto original del emisor:", translationMsg.text);
           this.onTranscript(translationMsg.text, false);
         }
-        // Si somos el emisor (español), mostramos las traducciones que vienen del receptor (italiano)
+        // Si somos el emisor (español), mostramos las traducciones del receptor (italiano)
         else if (this.language === "es" && translationMsg.from === "it") {
-          console.log("[Speech] Mostrando traducción al español");
+          console.log("[Speech] (Emisor) Mostrando traducción del receptor:", translationMsg.translated);
           this.onTranscript(translationMsg.translated, false);
         }
       }
@@ -134,9 +133,9 @@ export class SpeechHandler {
     try {
       console.log(`[Speech] Texto reconocido en ${this.language}:`, text);
 
-      // Solo mostramos el texto local para el receptor (italiano)
+      // Solo el receptor (italiano) ve su propio texto
       if (this.language === "it") {
-        console.log("[Speech] Mostrando texto local en italiano");
+        console.log("[Speech] Mostrando texto local del receptor");
         this.onTranscript(text, true);
       }
 

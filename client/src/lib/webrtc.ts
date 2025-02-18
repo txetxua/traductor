@@ -7,9 +7,7 @@ export class WebRTCConnection {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout?: NodeJS.Timeout;
-  private polite: boolean = false;
   private makingOffer: boolean = false;
-  private ignoreOffer: boolean = false;
 
   constructor(
     private roomId: string,
@@ -17,9 +15,7 @@ export class WebRTCConnection {
     private onConnectionStateChange: (state: RTCPeerConnectionState) => void,
     private onError: (error: Error) => void
   ) {
-    // El cliente que se une después es "polite" y cederá en caso de colisión
-    this.polite = Math.random() > 0.5;
-    console.log("[WebRTC] Inicializando como cliente", this.polite ? "polite" : "impolite");
+    console.log("[WebRTC] Inicializando conexión");
     this.initializePeerConnection();
     this.initializeWebSocket();
   }
@@ -73,20 +69,12 @@ export class WebRTCConnection {
 
       switch (message.type) {
         case "offer":
-          const offerCollision = 
-            this.makingOffer || 
-            this.pc.signalingState !== "stable";
-
-          this.ignoreOffer = !this.polite && offerCollision;
-          if (this.ignoreOffer) {
-            console.log("[WebRTC] Ignorando oferta debido a colisión");
+          if (this.makingOffer) {
+            console.log("[WebRTC] Colisión de ofertas, ignorando");
             return;
           }
 
-          console.log("[WebRTC] Procesando oferta, estado:", this.pc.signalingState);
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
-
-          console.log("[WebRTC] Creando respuesta");
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
 
@@ -97,21 +85,21 @@ export class WebRTCConnection {
           break;
 
         case "answer":
-          console.log("[WebRTC] Procesando respuesta");
+          if (this.pc.signalingState === "stable") {
+            console.log("[WebRTC] Ignorando respuesta en estado stable");
+            return;
+          }
           await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
           break;
 
         case "ice-candidate":
           try {
             if (message.payload) {
-              console.log("[WebRTC] Agregando candidato ICE");
               await this.pc.addIceCandidate(message.payload);
             }
           } catch (err) {
-            if (!this.ignoreOffer) {
-              console.error("[WebRTC] Error al agregar candidato ICE:", err);
-              throw err;
-            }
+            console.error("[WebRTC] Error al agregar candidato ICE:", err);
+            throw err;
           }
           break;
       }
@@ -154,6 +142,14 @@ export class WebRTCConnection {
       }
     };
 
+    this.pc.ontrack = (event) => {
+      console.log("[WebRTC] Track remoto recibido:", event.track.kind);
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        this.onRemoteStream(remoteStream);
+      }
+    };
+
     this.pc.oniceconnectionstatechange = () => {
       console.log("[WebRTC] Estado de conexión ICE:", this.pc.iceConnectionState);
       if (this.pc.iceConnectionState === 'failed') {
@@ -161,14 +157,17 @@ export class WebRTCConnection {
       }
     };
 
+    this.pc.onconnectionstatechange = () => {
+      console.log("[WebRTC] Estado de conexión:", this.pc.connectionState);
+      this.onConnectionStateChange(this.pc.connectionState);
+    };
+
     this.pc.onnegotiationneeded = async () => {
       try {
         this.makingOffer = true;
-        console.log("[WebRTC] Negociación necesaria, creando oferta");
         const offer = await this.pc.createOffer();
-        if (this.pc.signalingState !== "stable") return;
-
         await this.pc.setLocalDescription(offer);
+
         this.sendSignaling({
           type: "offer",
           payload: this.pc.localDescription
@@ -178,19 +177,6 @@ export class WebRTCConnection {
       } finally {
         this.makingOffer = false;
       }
-    };
-
-    this.pc.ontrack = (event) => {
-      console.log("[WebRTC] Track remoto recibido:", event.track.kind);
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        this.onRemoteStream(remoteStream);
-      }
-    };
-
-    this.pc.onconnectionstatechange = () => {
-      console.log("[WebRTC] Estado de conexión:", this.pc.connectionState);
-      this.onConnectionStateChange(this.pc.connectionState);
     };
   }
 
