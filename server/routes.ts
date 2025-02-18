@@ -17,6 +17,7 @@ const translateSchema = z.object({
   roomId: z.string()
 });
 
+// Diccionario de traducciones básicas
 const translations = {
   "es": {
     "hola": "ciao",
@@ -40,13 +41,15 @@ const translations = {
 
 const translateText = (text: string, from: string, to: string): string => {
   if (from === to) return text;
-  const phrases = text.toLowerCase().split(/[.!?]+/).filter(Boolean);
-  const translatedPhrases = phrases.map(phrase => {
-    const trimmedPhrase = phrase.trim();
+
+  // Traducir palabra por palabra usando el diccionario
+  const words = text.toLowerCase().split(/\s+/);
+  const translatedWords = words.map(word => {
     const dict = from === "es" ? translations.es : translations.it;
-    return dict[trimmedPhrase as keyof typeof dict] || trimmedPhrase;
+    return dict[word as keyof typeof dict] || word;
   });
-  return translatedPhrases.join(". ").trim();
+
+  return translatedWords.join(" ");
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -56,6 +59,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     keepAliveInterval?: NodeJS.Timeout;
   }>>();
 
+  // Configurar servidor HTTP
+  const httpServer = createServer(app);
+
+  // Configurar WebSocket Server
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: '/ws',
+    perMessageDeflate: false
+  });
+
+  console.log("[WebSocket] Server initialized on /ws");
+
+  // SSE endpoint para traducciones
   app.get("/api/translations/stream/:roomId", (req, res) => {
     const roomId = req.params.roomId;
     const language = req.query.language as string;
@@ -74,8 +90,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "Access-Control-Allow-Origin": "*"
     });
 
-    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
-
     const keepAliveInterval = setInterval(() => {
       res.write(": keepalive\n\n");
     }, 30000);
@@ -85,6 +99,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const client = { res, language, keepAliveInterval };
     sseClients.get(roomId)!.add(client);
+
+    // Enviar mensaje inicial de conexión
+    const initialMessage = JSON.stringify({ type: "connected" });
+    res.write(`data: ${initialMessage}\n\n`);
 
     req.on("close", () => {
       console.log(`[SSE] Client disconnected from room ${roomId}`);
@@ -97,25 +115,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
     });
-
-    req.on("error", (error) => {
-      console.error(`[SSE] Error in room ${roomId}:`, error);
-      clearInterval(keepAliveInterval);
-      const roomClients = sseClients.get(roomId);
-      if (roomClients) {
-        roomClients.delete(client);
-        if (roomClients.size === 0) {
-          sseClients.delete(roomId);
-        }
-      }
-    });
   });
 
+  // Endpoint de traducción
   app.post("/api/translate", async (req, res) => {
     console.log("[Translate] Request received:", req.body);
     try {
       const result = translateSchema.safeParse(req.body);
       if (!result.success) {
+        console.error("[Translate] Invalid request:", result.error);
         return res.status(400).json({ error: "Invalid translation request" });
       }
 
@@ -124,6 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Translate] Text translated: "${text}" -> "${translated}"`);
 
       const roomClients = sseClients.get(roomId);
+      console.log(`[Translate] Room clients for ${roomId}:`, roomClients?.size);
 
       if (roomClients) {
         const message: TranslationMessage = {
@@ -134,15 +143,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
+        let sentToSomeone = false;
         roomClients.forEach(client => {
           if (client.language === to) {
             try {
+              console.log(`[Translate] Sending translation to client with language ${client.language}`);
               client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+              sentToSomeone = true;
             } catch (error) {
               console.error(`[Translate] Error sending to client:`, error);
             }
           }
         });
+
+        console.log(`[Translate] Translation ${sentToSomeone ? 'was' : 'was not'} sent to any clients`);
+      } else {
+        console.log(`[Translate] No clients found in room ${roomId}`);
       }
 
       res.json({ translated });
@@ -152,17 +168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-
-  const wss = new WebSocketServer({
-    server: httpServer,
-    path: "/ws"
-  });
-
-  console.log("[WebSocket] Server initialized on /ws");
-
-  const rooms = new Map<string, Set<WebSocket>>();
-
+  // Manejo de conexiones WebSocket
   wss.on("connection", (ws, req) => {
     console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
     let currentRoom: string | null = null;
@@ -249,6 +255,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       sendMessage({ type: "error", error: "WebSocket error occurred" });
     });
   });
+
+  const rooms = new Map<string, Set<WebSocket>>();
 
   return httpServer;
 }

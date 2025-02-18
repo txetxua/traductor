@@ -29,7 +29,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // Only display the other participant's translations
+  // Estado para los subtítulos local y remoto
+  const [localTranscript, setLocalTranscript] = useState("");
   const [remoteTranscript, setRemoteTranscript] = useState("");
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [subtitlesConfig, setSubtitlesConfig] = useState<SubtitlesConfigType>(DEFAULT_SUBTITLES_CONFIG);
@@ -39,15 +40,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
 
-  // Timer to clear subtitles
-  const timerRef = useRef<NodeJS.Timeout>();
+  // Timer para limpiar subtítulos
+  const localTimerRef = useRef<NodeJS.Timeout>();
+  const remoteTimerRef = useRef<NodeJS.Timeout>();
 
-  const clearTranscriptAfterDelay = (delay: number = 5000) => {
+  const clearTranscriptAfterDelay = (isLocal: boolean, delay: number = 5000) => {
+    const timerRef = isLocal ? localTimerRef : remoteTimerRef;
+    const setTranscript = isLocal ? setLocalTranscript : setRemoteTranscript;
+
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
     timerRef.current = setTimeout(() => {
-      setRemoteTranscript("");
+      setTranscript("");
     }, delay);
   };
 
@@ -55,11 +60,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     let mounted = true;
 
     const handleSpeechResult = (text: string, isLocal: boolean) => {
-      // Only display remote transcripts
-      if (!isLocal) {
-        console.log("[VideoCall] Remote transcript received:", text);
+      console.log(`[VideoCall] ${isLocal ? 'Local' : 'Remote'} transcript received:`, text);
+
+      if (isLocal) {
+        setLocalTranscript(text);
+        clearTranscriptAfterDelay(true);
+      } else {
         setRemoteTranscript(text);
-        clearTranscriptAfterDelay();
+        clearTranscriptAfterDelay(false);
       }
     };
 
@@ -199,8 +207,11 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
     return () => {
       mounted = false;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
+      if (localTimerRef.current) {
+        clearTimeout(localTimerRef.current);
+      }
+      if (remoteTimerRef.current) {
+        clearTimeout(remoteTimerRef.current);
       }
       if (localVideoRef.current?.srcObject) {
         const stream = localVideoRef.current.srcObject as MediaStream;
@@ -271,8 +282,16 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        {/* Only show subtitles for remote translations */}
         <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
+          {localTranscript && (
+            <Subtitles
+              transcript={localTranscript}
+              config={{
+                ...subtitlesConfig,
+                color: "rgba(255, 255, 255, 0.7)" // Subtítulos locales más transparentes
+              }}
+            />
+          )}
           {remoteTranscript && (
             <Subtitles
               transcript={remoteTranscript}

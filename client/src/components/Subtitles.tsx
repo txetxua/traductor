@@ -22,12 +22,13 @@ export default function Subtitles({ transcript, config }: Props) {
     borderRadius: "4px",
     lineHeight: "1.5",
     whiteSpace: "pre-wrap", // Preservar saltos de línea
-    wordBreak: "break-word" // Evitar desbordamiento
+    wordBreak: "break-word", // Evitar desbordamiento
+    zIndex: 50 // Asegurar que los subtítulos estén siempre visibles
   };
 
   return (
     <div 
-      className="text-center"
+      className="text-center relative"
       style={subtitleStyle}
     >
       {transcript}

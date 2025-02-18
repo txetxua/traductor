@@ -52,9 +52,18 @@ export class TranslationHandler {
           const message = JSON.parse(event.data);
           console.log("[Translations] Message received:", message);
 
-          if (message.type === "translation" && message.to === this.language) {
-            console.log("[Translations] Showing translation:", message.translated);
-            this.onTranslation(message.translated, false);
+          if (message.type === "translation") {
+            // Verificar que el idioma de destino coincida con nuestro idioma
+            if (message.to === this.language) {
+              console.log("[Translations] Showing translation:", message.translated);
+              this.onTranslation(message.translated, false);
+            } else {
+              console.log("[Translations] Ignoring translation for different language:", message.to);
+            }
+          } else if (message.type === "connected") {
+            console.log("[Translations] SSE connection confirmed");
+          } else {
+            console.log("[Translations] Unknown message type:", message.type);
           }
         } catch (error) {
           console.error("[Translations] Error processing message:", error);
@@ -62,8 +71,8 @@ export class TranslationHandler {
         }
       };
 
-      this.eventSource.onerror = () => {
-        console.error("[Translations] SSE connection error");
+      this.eventSource.onerror = (event) => {
+        console.error("[Translations] SSE connection error:", event);
         this.isConnected = false;
 
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
@@ -76,7 +85,9 @@ export class TranslationHandler {
             }, this.reconnectDelay);
           }
         } else {
-          this.onError?.(new Error("Failed to establish SSE connection after maximum attempts"));
+          const error = new Error("Failed to establish SSE connection after maximum attempts");
+          console.error("[Translations]", error);
+          this.onError?.(error);
         }
       };
 
@@ -87,6 +98,11 @@ export class TranslationHandler {
   }
 
   async translate(text: string) {
+    if (!text.trim()) {
+      console.log("[Translations] Empty text, skipping translation");
+      return;
+    }
+
     try {
       const baseUrl = this.getApiBaseUrl();
       console.log("[Translations] Translating text:", text);
@@ -106,10 +122,10 @@ export class TranslationHandler {
         throw new Error(`Translation error: ${response.status}`);
       }
 
-      const { translated } = await response.json();
-      console.log("[Translations] Text translated:", translated);
+      const data = await response.json();
+      console.log("[Translations] Translation response:", data);
 
-      // Show local transcription
+      // Mostrar el texto original localmente
       this.onTranslation(text, true);
     } catch (error) {
       console.error("[Translations] Error:", error);
