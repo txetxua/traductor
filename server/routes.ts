@@ -34,16 +34,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[Translations] Setting up SSE for room ${roomId}, language ${language}`);
 
-      // Set SSE headers
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*'
-      });
+      // Set SSE headers with correct CORS
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-      // Send initial message
-      res.write('data: {"type":"connected"}\n\n');
+      // Send initial message to confirm connection
+      res.flushHeaders();
+      res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
 
       // Store SSE client
       if (!sseClients.has(roomId)) {
@@ -132,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Socket.IO handling remains unchanged
+  // Socket.IO handling
   io.on('connection', (socket) => {
     console.log("[SocketIO] New connection:", socket.id);
     let currentRoom: string | null = null;

@@ -21,11 +21,12 @@ export class TranslationHandler {
     try {
       this.cleanup();
 
-      const url = new URL(`${window.location.origin}/api/translations/stream/${this.roomId}`);
-      url.searchParams.set('language', this.language);
-      console.log("[Translations] Connecting to:", url.toString());
+      // Usar la URL actual para el SSE
+      const sseUrl = new URL(`${window.location.origin}/api/translations/stream/${this.roomId}`);
+      sseUrl.searchParams.set('language', this.language);
 
-      this.eventSource = new EventSource(url.toString());
+      console.log("[Translations] Connecting to:", sseUrl.toString());
+      this.eventSource = new EventSource(sseUrl.toString());
 
       this.eventSource.onmessage = (event) => {
         try {
@@ -34,7 +35,6 @@ export class TranslationHandler {
 
           if (message.type === 'translation') {
             const isLocal = message.from === this.language;
-            // Mostrar el texto según el idioma seleccionado
             const text = this.language === message.to ? message.translated : message.text;
 
             console.log("[Translations] Processing:", {
@@ -72,7 +72,7 @@ export class TranslationHandler {
 
       const targetLanguage = this.language === "es" ? "it" : "es";
 
-      const response = await fetch(`${window.location.origin}/api/translate`, {
+      const response = await fetch(`/api/translate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
