@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type Language } from "@shared/schema";
-import { Link, PhoneOff } from "lucide-react";
+import { Link, PhoneOff, Video, VideoOff, Mic, MicOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 interface Props {
   language: Language;
@@ -20,6 +21,8 @@ export default function CallControls({
   onHangup,
 }: Props) {
   const { toast } = useToast();
+  const [videoEnabled, setVideoEnabled] = useState(true);
+  const [audioEnabled, setAudioEnabled] = useState(true);
 
   const copyRoomLink = () => {
     const url = `${window.location.origin}/call/${roomId}`;
@@ -29,6 +32,28 @@ export default function CallControls({
         duration: 2000
       });
     });
+  };
+
+  const toggleVideo = () => {
+    const videoTrack = document.querySelector('video')?.srcObject
+      ?.getTracks()
+      .find(track => track.kind === 'video');
+
+    if (videoTrack) {
+      videoTrack.enabled = !videoEnabled;
+      setVideoEnabled(!videoEnabled);
+    }
+  };
+
+  const toggleAudio = () => {
+    const audioTrack = document.querySelector('video')?.srcObject
+      ?.getTracks()
+      .find(track => track.kind === 'audio');
+
+    if (audioTrack) {
+      audioTrack.enabled = !audioEnabled;
+      setAudioEnabled(!audioEnabled);
+    }
   };
 
   const getConnectionStatusText = () => {
@@ -76,6 +101,26 @@ export default function CallControls({
           <SelectItem value="it">Italiano</SelectItem>
         </SelectContent>
       </Select>
+
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={toggleVideo}
+        title={videoEnabled ? "Desactivar cámara" : "Activar cámara"}
+        className="bg-black/60"
+      >
+        {videoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+      </Button>
+
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={toggleAudio}
+        title={audioEnabled ? "Desactivar micrófono" : "Activar micrófono"}
+        className="bg-black/60"
+      >
+        {audioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+      </Button>
 
       <Button
         variant="outline"
