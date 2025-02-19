@@ -55,8 +55,12 @@ export class TranslationHandler {
           if (message.type === "translation") {
             const isLocal = message.from === this.language;
 
-            // For local messages, use the original text
-            // For remote messages, use the translated text
+            // Para mensajes locales (el usuario está hablando):
+            // - Si el usuario habla español, mostrar el texto original en español
+            // - Si el usuario habla italiano, mostrar el texto original en italiano
+            // Para mensajes remotos (el otro usuario está hablando):
+            // - Si el usuario local usa español, mostrar la traducción en español
+            // - Si el usuario local usa italiano, mostrar la traducción en italiano
             const text = isLocal ? message.text : message.translated;
 
             console.log(`[Translations] Processing ${isLocal ? 'local' : 'remote'} translation:`, {
@@ -66,14 +70,11 @@ export class TranslationHandler {
               language: this.language
             });
 
-            // Remove from pending translations if it was one we sent
             if (isLocal) {
               this.pendingTranslations.delete(message.text);
             }
 
             this.onTranslation(text, isLocal);
-          } else if (message.type === "connected") {
-            console.log("[Translations] Connection confirmed");
           }
         } catch (error) {
           console.error("[Translations] Message processing error:", error);
@@ -126,13 +127,18 @@ export class TranslationHandler {
 
       this.pendingTranslations.add(text);
 
+      // Siempre traducir al idioma opuesto:
+      // - Si el hablante usa español, traducir a italiano
+      // - Si el hablante usa italiano, traducir a español
+      const targetLanguage = this.language === "es" ? "it" : "es";
+
       const response = await fetch(`${this.getApiBaseUrl()}/api/translate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
           from: this.language,
-          to: this.language === "es" ? "it" : "es",
+          to: targetLanguage,
           roomId: this.roomId
         })
       });
