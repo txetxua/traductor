@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { WebRTCConnection } from "@/lib/webrtc";
+import { SpeechHandler } from "@/lib/speech";
 import { type Language } from "@shared/schema";
 import CallControls from "@/components/CallControls";
+import Subtitles from "@/components/Subtitles";
+import SubtitlesConfig from "@/components/SubtitlesConfig";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
@@ -15,10 +18,17 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const webrtcRef = useRef<WebRTCConnection>();
+  const speechRef = useRef<SpeechHandler>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [error, setError] = useState<string>();
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
+  const [transcript, setTranscript] = useState<string>("");
+  const [subtitlesConfig, setSubtitlesConfig] = useState({
+    fontSize: 24,
+    fontFamily: "sans",
+    color: "white",
+  });
 
   useEffect(() => {
     async function setupCall() {
@@ -38,6 +48,24 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             console.warn("[VideoCall] Local video autoplay failed:", error);
           });
         }
+
+        // Initialize Speech Recognition
+        speechRef.current = new SpeechHandler(
+          roomId,
+          language,
+          (text: string, isLocal: boolean) => {
+            console.log("[VideoCall] Transcript received:", { text, isLocal });
+            setTranscript(text);
+          },
+          (error: Error) => {
+            console.error("[VideoCall] Speech error:", error);
+            toast({
+              variant: "destructive",
+              title: "Error de reconocimiento de voz",
+              description: error.message
+            });
+          }
+        );
 
         // Initialize WebRTC
         const webrtc = new WebRTCConnection(
@@ -67,8 +95,12 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
                 title: "Conectado",
                 description: "La conexión se ha establecido correctamente"
               });
+              // Start speech recognition when connected
+              speechRef.current?.start();
             } else if (state === 'failed' || state === 'disconnected') {
               setError("La conexión se ha perdido. Intentando reconectar...");
+              // Stop speech recognition on disconnection
+              speechRef.current?.stop();
             }
           },
           (error) => {
@@ -84,6 +116,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         await webrtc.start(stream);
         webrtcRef.current = webrtc;
+        speechRef.current.start();
 
       } catch (error: any) {
         console.error("[VideoCall] Setup error:", error);
@@ -107,13 +140,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       if (webrtcRef.current) {
         webrtcRef.current.close();
       }
+      if (speechRef.current) {
+        speechRef.current.stop();
+      }
     };
-  }, [roomId, toast]);
+  }, [roomId, language, toast]);
 
   const handleHangup = () => {
     console.log("[VideoCall] Hanging up");
     if (webrtcRef.current) {
       webrtcRef.current.close();
+    }
+    if (speechRef.current) {
+      speechRef.current.stop();
     }
     setLocation("/");
   };
@@ -148,7 +187,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             aria-label="Video local"
           />
         </div>
+
+        <SubtitlesConfig onChange={setSubtitlesConfig} />
+
+        <div className="absolute bottom-24 left-0 right-0 flex justify-center">
+          <Subtitles transcript={transcript} config={subtitlesConfig} />
+        </div>
       </div>
+
       <CallControls
         language={language}
         onLanguageChange={onLanguageChange}
