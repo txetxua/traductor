@@ -101,14 +101,14 @@ export class SpeechHandler {
 
           if (result.isFinal) {
             const text = result[0].transcript.trim();
-            console.log("[Speech] Final text recognized:", text);
+            console.log("[Speech] Final text recognized:", text, "Language:", this.language);
 
             if (!text) {
               console.log("[Speech] Empty text, ignoring");
               return;
             }
 
-            // Enviar el texto local y la traducción
+            // Enviar el texto original y solicitar traducción
             this.onTranscript(text, true);
             await this.translationHandler.translate(text);
           }
@@ -126,7 +126,7 @@ export class SpeechHandler {
 
   private cleanup() {
     if (this.recognition) {
-      console.log("[Speech] Cleaning up existing recognition instance");
+      console.log("[Speech] Cleaning up recognition");
       this.recognition.onend = null;
       this.recognition.onerror = null;
       this.recognition.onresult = null;
@@ -168,20 +168,14 @@ export class SpeechHandler {
       console.log("[Speech] Starting recognition for language:", this.language);
       this.recognition?.start();
     } catch (error) {
-      if (error instanceof Error && error.message.includes('already started')) {
-        console.log("[Speech] Recognition already started, restarting");
-        this.restart();
-      } else {
-        console.error("[Speech] Error starting recognition:", error);
-        this.onError?.(error as Error);
-      }
+      console.error("[Speech] Error starting recognition:", error);
+      this.onError?.(error as Error);
     }
   }
 
   stop() {
     console.log("[Speech] Stopping recognition");
     this.isStarted = false;
-
     this.cleanup();
     this.translationHandler.stop();
   }

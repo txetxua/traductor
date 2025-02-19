@@ -44,9 +44,6 @@ export class TranslationHandler {
         console.log("[Translations] SSE Connection opened");
         this.isConnected = true;
         this.retryCount = 0;
-
-        // Send a test message to verify the connection
-        this.translate("Test connection");
       };
 
       this.eventSource.onmessage = (event) => {
@@ -56,14 +53,16 @@ export class TranslationHandler {
           console.log("[Translations] Parsed message:", message);
 
           if (message.type === "translation") {
+            // Mostrar el texto según el idioma seleccionado
             const isLocal = message.from === this.language;
-            const text = isLocal ? message.text : message.translated;
+            const text = this.language === message.to ? message.translated : message.text;
 
-            console.log(`[Translations] Processing ${isLocal ? 'local' : 'remote'} translation:`, {
+            console.log(`[Translations] Processing translation:`, {
               text,
               from: message.from,
               to: message.to,
-              language: this.language
+              selectedLanguage: this.language,
+              isLocal
             });
 
             if (isLocal) {
@@ -128,6 +127,7 @@ export class TranslationHandler {
 
       this.pendingTranslations.add(text);
 
+      // Siempre traducir al otro idioma
       const targetLanguage = this.language === "es" ? "it" : "es";
 
       const response = await fetch(`${this.getApiBaseUrl()}/api/translate`, {
