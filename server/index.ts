@@ -4,29 +4,31 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// Enhanced CORS middleware with specific WebRTC and WebSocket support
+// Enhanced CORS and WebSocket middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
 
+  // Basic CORS headers
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, sec-webrtc-priority');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Cross-Origin-Opener-Policy', 'same-origin');
-  res.header('Cross-Origin-Embedder-Policy', 'require-corp');
-  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
 
-  // Special headers for WebSocket and WebRTC
+  // Handle WebSocket upgrade requests
   if (req.headers.upgrade === 'websocket') {
-    res.header('Connection', 'Upgrade');
-    res.header('Upgrade', 'websocket');
+    res.removeHeader('Connection');
+    res.removeHeader('Upgrade');
+    next();
+    return;
   }
 
+  // Handle preflight requests
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
-  } else {
-    next();
+    return;
   }
+
+  next();
 });
 
 // Basic middleware setup
@@ -37,27 +39,16 @@ app.use(express.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  if (path.startsWith("/ws") || req.headers.upgrade) {
-    log(`WebSocket/WebRTC upgrade request: ${req.method} ${path}`);
+  if (path.startsWith("/ws")) {
+    log(`WebSocket request: ${req.method} ${path}`);
     log(`Headers: ${JSON.stringify(req.headers)}`);
   }
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-      log(logLine);
+      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
     }
   });
 
@@ -68,6 +59,7 @@ app.use((req, res, next) => {
   try {
     const server = await registerRoutes(app);
 
+    // Error handling middleware
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       console.error("[Server] Error:", err);
       const status = err.status || err.statusCode || 500;
@@ -84,7 +76,7 @@ app.use((req, res, next) => {
     const PORT = 5000;
     server.listen(PORT, "0.0.0.0", () => {
       log(`Server running on port ${PORT}`);
-      log(`WebSocket/WebRTC server available at wss://0.0.0.0:${PORT}/ws`);
+      log(`WebSocket server available at wss://0.0.0.0:${PORT}/ws`);
     });
   } catch (error) {
     console.error("[Server] Fatal error:", error);
