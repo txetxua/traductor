@@ -1,97 +1,91 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { WebSocketServer, WebSocket } from "ws";
-import { z } from "zod";
+import { Server as SocketIOServer } from "socket.io";
 import { type SignalingMessage } from "@shared/schema";
 
-const clients = new Map<string, Map<string, WebSocket>>();
+const rooms = new Map<string, Set<string>>();
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
-  // Create WebSocket server
-  const wss = new WebSocketServer({ 
-    server: httpServer,
-    path: '/ws',
-    perMessageDeflate: false // Disable compression for WebRTC data
+  // Create Socket.IO server
+  const io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    },
+    path: '/socket.io'
   });
 
-  console.log("[WebSocket] Server initialized");
+  console.log("[SocketIO] Server initialized");
 
-  wss.on('connection', (ws: WebSocket, req) => {
-    console.log("[WebSocket] New connection from:", req.socket.remoteAddress);
+  io.on('connection', (socket) => {
+    console.log("[SocketIO] New connection:", socket.id);
+    let currentRoom: string;
 
-    let roomId = '';
-    let clientId = '';
-
-    ws.on('message', (data: WebSocket.Data) => {
+    socket.on('join', ({ roomId }) => {
       try {
-        const message = JSON.parse(data.toString());
-        console.log("[WebSocket] Received message:", message);
+        currentRoom = roomId;
+        socket.join(roomId);
 
-        // Handle join room message
-        if (message.type === 'join' && message.roomId) {
-          roomId = message.roomId;
-          clientId = Math.random().toString(36).substring(7);
-
-          // Initialize room if needed
-          if (!clients.has(roomId)) {
-            clients.set(roomId, new Map());
-          }
-
-          // Add client to room
-          const room = clients.get(roomId);
-          if (room) {
-            room.set(clientId, ws);
-            console.log(`[WebSocket] Client ${clientId} joined room ${roomId}`);
-
-            // Send joined confirmation
-            ws.send(JSON.stringify({
-              type: 'joined',
-              clientId,
-              clients: room.size
-            }));
-          }
-          return;
+        // Initialize room if needed
+        if (!rooms.has(roomId)) {
+          rooms.set(roomId, new Set());
         }
 
-        // Handle WebRTC signaling messages
-        if (roomId && clientId) {
-          const room = clients.get(roomId);
-          if (room) {
-            // Broadcast to all other clients in the room
-            room.forEach((client, id) => {
-              if (id !== clientId && client.readyState === WebSocket.OPEN) {
-                client.send(data.toString());
-              }
-            });
-          }
-        }
+        // Add client to room
+        const room = rooms.get(roomId)!;
+        room.add(socket.id);
+
+        console.log(`[SocketIO] Client ${socket.id} joined room ${roomId}`);
+
+        // Notify client
+        socket.emit('joined', {
+          clientId: socket.id,
+          clients: room.size
+        });
 
       } catch (error) {
-        console.error("[WebSocket] Error processing message:", error);
-        ws.send(JSON.stringify({
-          type: 'error',
-          error: 'Invalid message format'
-        }));
+        console.error("[SocketIO] Join error:", error);
+        socket.emit('error', {
+          message: 'Error al unirse a la sala'
+        });
       }
     });
 
-    ws.on('error', (error) => {
-      console.error("[WebSocket] Client error:", error);
+    // Handle WebRTC signaling
+    socket.on('signal', (message) => {
+      try {
+        if (!currentRoom) {
+          throw new Error('No room joined');
+        }
+
+        console.log("[SocketIO] Broadcasting signal:", message.type);
+        socket.to(currentRoom).emit('signal', message);
+
+      } catch (error) {
+        console.error("[SocketIO] Signal error:", error);
+        socket.emit('error', {
+          message: 'Error al procesar señal'
+        });
+      }
     });
 
-    ws.on('close', () => {
-      if (roomId && clientId) {
-        const room = clients.get(roomId);
+    socket.on('disconnect', () => {
+      if (currentRoom) {
+        const room = rooms.get(currentRoom);
         if (room) {
-          room.delete(clientId);
+          room.delete(socket.id);
           if (room.size === 0) {
-            clients.delete(roomId);
+            rooms.delete(currentRoom);
           }
-          console.log(`[WebSocket] Client ${clientId} left room ${roomId}`);
+          console.log(`[SocketIO] Client ${socket.id} left room ${currentRoom}`);
         }
       }
+    });
+
+    socket.on('error', (error) => {
+      console.error("[SocketIO] Socket error:", error);
     });
   });
 

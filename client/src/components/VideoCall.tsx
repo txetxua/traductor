@@ -18,10 +18,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [error, setError] = useState<string>();
+  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
 
   useEffect(() => {
     async function setupCall() {
       try {
+        console.log("[VideoCall] Setting up call for room:", roomId);
+
         // Get user media
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -37,16 +40,22 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         const webrtc = new WebRTCConnection(
           roomId,
           (remoteStream) => {
+            console.log("[VideoCall] Received remote stream");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
             }
           },
           (state) => {
+            console.log("[VideoCall] Connection state:", state);
+            setConnectionState(state);
             if (state === 'connected') {
+              setError(undefined);
               toast({
                 title: "Conectado",
                 description: "La conexión se ha establecido correctamente"
               });
+            } else if (state === 'failed' || state === 'disconnected') {
+              setError("La conexión se ha perdido. Intentando reconectar...");
             }
           },
           (error) => {
@@ -65,11 +74,15 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
       } catch (error: any) {
         console.error("[VideoCall] Setup error:", error);
-        setError(error.message);
+        const errorMessage = error.name === 'NotAllowedError' 
+          ? "No se ha permitido el acceso a la cámara y micrófono. Por favor, conceda los permisos necesarios."
+          : error.message;
+
+        setError(errorMessage);
         toast({
           variant: "destructive",
           title: "Error",
-          description: error.message
+          description: errorMessage
         });
       }
     }
@@ -77,12 +90,18 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     setupCall();
 
     return () => {
-      webrtcRef.current?.close();
+      console.log("[VideoCall] Cleaning up");
+      if (webrtcRef.current) {
+        webrtcRef.current.close();
+      }
     };
   }, [roomId, toast]);
 
   const handleHangup = () => {
-    webrtcRef.current?.close();
+    console.log("[VideoCall] Hanging up");
+    if (webrtcRef.current) {
+      webrtcRef.current.close();
+    }
     setLocation("/");
   };
 
@@ -99,7 +118,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
-            <div className="bg-destructive p-4 rounded-lg">
+            <div className="bg-destructive p-4 rounded-lg max-w-md text-center">
               {error}
             </div>
           </div>
@@ -120,7 +139,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       <CallControls
         language={language}
         onLanguageChange={onLanguageChange}
-        connectionState={undefined}
+        connectionState={connectionState}
         roomId={roomId}
         onHangup={handleHangup}
       />
