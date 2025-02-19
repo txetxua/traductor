@@ -1,0 +1,39 @@
+hook.js:608 AbortError: The play() request was interrupted by a new load request. https://goo.gl/LdLk22
+3
+webrtc.ts:50 [WebRTC] Received signal: ice-candidate
+webrtc.ts:150 [WebRTC] Connection state changed to: connecting
+VideoCall.tsx:135 [VideoCall] Connection state: connecting
+2
+webrtc.ts:50 [WebRTC] Received signal: ice-candidate
+webrtc.ts:50 [WebRTC] Received signal: answer
+hook.js:608 [WebRTC] Error handling answer: InvalidStateError: Failed to execute 'setRemoteDescription' on 'RTCPeerConnection': Failed to set remote answer sdp: Called in wrong state: stable
+hook.js:608 [WebRTC] Error: InvalidStateError: Failed to execute 'setRemoteDescription' on 'RTCPeerConnection': Failed to set remote answer sdp: Called in wrong state: stable
+hook.js:608 [VideoCall] Error: InvalidStateError: Failed to execute 'setRemoteDescription' on 'RTCPeerConnection': Failed to set remote answer sdp: Called in wrong state: stable
+7
+webrtc.ts:50 [WebRTC] Received signal: ice-candidate
+speech.ts:99 [Speech] Recognition error: aborted 
+speech.ts:164 [Speech] Error 1/5: Reconocimiento de voz interrumpido
+VideoCall.tsx:170 [VideoCall] Speech error: Error: Reconocimiento de voz interrumpido
+    at recognition.onerror (speech.ts:127:26)
+speech.ts:75 [Speech] Recognition ended
+speech.ts:84 [Speech] Scheduling restart in 2080 ms
+speech.ts:87 [Speech] Restarting recognition
+speech.ts:57 [Speech] Setting language to: es-ES
+speech.ts:69 [Speech] Recognition started for language: es
+speech.ts:99 [Speech] Recognition error: aborted 
+speech.ts:164 [Speech] Error 2/5: Reconocimiento de voz interrumpido
+VideoCall.tsx:170 [VideoCall] Speech error: Error: Reconocimiento de voz interrumpido
+    at recognition.onerror (speech.ts:127:26)
+speech.ts:75 [Speech] Recognition ended
+speech.ts:84 [Speech] Scheduling restart in 2199 ms
+speech.ts:87 [Speech] Restarting recognition
+speech.ts:57 [Speech] Setting language to: es-ES
+speech.ts:69 [Speech] Recognition started for language: es
+speech.ts:99 [Speech] Recognition error: aborted 
+speech.ts:164 [Speech] Error 3/5: Reconocimiento de voz interrumpido
+VideoCall.tsx:170 [VideoCall] Speech error: Error: Reconocimiento de voz interrumpido
+    at recognition.onerror (speech.ts:127:26)
+(anonymous)	@	VideoCall.tsx:170
+handleError	@	speech.ts:165
+recognition.onerror	@	speech.ts:127
+

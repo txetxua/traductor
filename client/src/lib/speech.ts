@@ -11,10 +11,10 @@ export class SpeechHandler {
   private restartTimeout?: number;
   private errorCount: number = 0;
   private lastRestartTime: number = 0;
-  private readonly MAX_ERRORS = 5;
-  private readonly ERROR_RESET_INTERVAL = 60000; // 1 minute
-  private readonly RESTART_DELAY = 2000;
-  private readonly MIN_RESTART_INTERVAL = 5000; // Minimum time between restarts
+  private readonly MAX_ERRORS = 10; // Increased to allow more retries
+  private readonly ERROR_RESET_INTERVAL = 120000; // 2 minutes
+  private readonly RESTART_DELAY = 3000; // 3 seconds
+  private readonly MIN_RESTART_INTERVAL = 10000; // 10 seconds between restarts
 
   constructor(
     private roomId: string,
@@ -29,7 +29,6 @@ export class SpeechHandler {
       onTranscript,
       onError
     );
-    this.setupRecognition();
   }
 
   private setupRecognition() {
@@ -38,6 +37,7 @@ export class SpeechHandler {
         throw new Error("Speech recognition is not supported in this browser. Try using Chrome.");
       }
 
+      // Clean up existing recognition instance
       if (this.recognition) {
         this.recognition.onend = null;
         this.recognition.onerror = null;
@@ -47,7 +47,7 @@ export class SpeechHandler {
 
       this.recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
       this.recognition.continuous = true;
-      this.recognition.interimResults = true;
+      this.recognition.interimResults = false; // Changed to false to reduce processing load
 
       const langMap: Record<Language, string> = {
         es: "es-ES",
@@ -61,7 +61,7 @@ export class SpeechHandler {
       setInterval(() => {
         if (this.errorCount > 0) {
           console.log("[Speech] Resetting error count");
-          this.errorCount = 0;
+          this.errorCount = Math.max(0, this.errorCount - 1); // Gradually reduce errors
         }
       }, this.ERROR_RESET_INTERVAL);
 
@@ -82,6 +82,10 @@ export class SpeechHandler {
           );
 
           console.log("[Speech] Scheduling restart in", delayBeforeRestart, "ms");
+          if (this.restartTimeout) {
+            clearTimeout(this.restartTimeout);
+          }
+
           this.restartTimeout = window.setTimeout(() => {
             if (this.isStarted) {
               console.log("[Speech] Restarting recognition");
@@ -91,7 +95,7 @@ export class SpeechHandler {
         } else if (this.errorCount >= this.MAX_ERRORS) {
           console.log("[Speech] Too many errors, stopping recognition");
           this.stop();
-          this.onError?.(new Error("Speech recognition stopped due to too many errors. Please refresh the page to try again."));
+          this.onError?.(new Error("El reconocimiento de voz se ha detenido debido a errores repetidos. Por favor, actualice la página para intentar nuevamente."));
         }
       };
 
@@ -100,6 +104,7 @@ export class SpeechHandler {
 
         // Don't count these as errors
         if (event.error === 'no-speech' || 
+            event.error === 'audio-capture' ||
             (event.error === 'aborted' && !this.isStarted)) {
           console.log("[Speech] Ignoring non-critical error");
           return;
@@ -108,17 +113,17 @@ export class SpeechHandler {
         // Map specific errors to user-friendly messages
         let errorMessage: string;
         switch (event.error) {
-          case 'audio-capture':
-            errorMessage = "No se detectó micrófono o está deshabilitado";
+          case 'network':
+            errorMessage = "Error de red. Por favor, verifique su conexión.";
             break;
           case 'not-allowed':
             errorMessage = "Acceso al micrófono denegado. Por favor, permita el acceso en la configuración del navegador.";
             break;
-          case 'network':
-            errorMessage = "Error de red. Por favor, verifique su conexión.";
+          case 'service-not-allowed':
+            errorMessage = "El servicio de reconocimiento de voz no está disponible. Por favor, intente más tarde.";
             break;
           case 'aborted':
-            errorMessage = "Reconocimiento de voz interrumpido";
+            errorMessage = "El reconocimiento de voz se interrumpió. Reiniciando...";
             break;
           default:
             errorMessage = `Error en el reconocimiento de voz: ${event.error}`;
@@ -142,6 +147,11 @@ export class SpeechHandler {
             // Show local transcription immediately
             console.log("[Speech] Sending local transcript");
             this.onTranscript(text, true);
+
+            // Reset error count on successful recognition
+            if (this.errorCount > 0) {
+              this.errorCount = Math.max(0, this.errorCount - 1);
+            }
 
             // Send for translation
             console.log("[Speech] Requesting translation");
@@ -168,7 +178,9 @@ export class SpeechHandler {
   private restart() {
     try {
       this.setupRecognition();
-      this.recognition?.start();
+      if (this.recognition && this.isStarted) {
+        this.recognition.start();
+      }
     } catch (error) {
       console.error("[Speech] Error during restart:", error);
       this.handleError(error as Error);
@@ -177,15 +189,14 @@ export class SpeechHandler {
 
   start() {
     if (!this.recognition) {
-      console.error("[Speech] Recognition not initialized");
-      return;
+      this.setupRecognition();
     }
 
     this.errorCount = 0;
     if (!this.isStarted) {
       try {
         console.log("[Speech] Starting recognition for language:", this.language);
-        this.recognition.start();
+        this.recognition?.start();
       } catch (error) {
         console.error("[Speech] Error starting recognition:", error);
         this.handleError(error as Error);
