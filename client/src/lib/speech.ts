@@ -10,8 +10,9 @@ export class SpeechHandler {
   private isStarted: boolean = false;
   private restartTimeout?: number;
   private errorCount: number = 0;
-  private readonly MAX_ERRORS = 3;
-  private readonly ERROR_RESET_INTERVAL = 10000; // 10 seconds
+  private readonly MAX_ERRORS = 5; // Increased from 3 to 5
+  private readonly ERROR_RESET_INTERVAL = 30000; // Increased from 10s to 30s
+  private readonly RESTART_DELAY = 2000; // Increased from 1s to 2s
 
   constructor(
     private roomId: string,
@@ -35,14 +36,10 @@ export class SpeechHandler {
         throw new Error("Speech recognition is not supported in this browser. Try using Chrome.");
       }
 
-      // Initialize recognition with proper fallback
       this.recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
-
-      // Configure recognition settings
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
 
-      // Set language based on the selected language
       const langMap: Record<Language, string> = {
         es: "es-ES",
         it: "it-IT"
@@ -59,7 +56,6 @@ export class SpeechHandler {
         }
       }, this.ERROR_RESET_INTERVAL);
 
-      // Event handlers
       this.recognition.onstart = () => {
         console.log("[Speech] Recognition started for language:", this.language);
         this.isStarted = true;
@@ -81,48 +77,49 @@ export class SpeechHandler {
                 this.handleError(error as Error);
               }
             }
-          }, 1000) as unknown as number;
+          }, this.RESTART_DELAY) as unknown as number;
         } else if (this.errorCount >= this.MAX_ERRORS) {
           console.log("[Speech] Too many errors, stopping recognition");
           this.stop();
-          this.onError?.(new Error("Speech recognition stopped due to too many errors"));
+          this.onError?.(new Error("Speech recognition stopped due to too many errors. Please refresh the page to try again."));
         }
       };
 
       this.recognition.onerror = (event) => {
-        console.error("[Speech] Recognition error:", event.error, event.message);
+        console.log("[Speech] Recognition error:", event.error, event.message);
 
-        // Don't count no-speech as an error
+        // Handle no-speech differently - don't count as an error
         if (event.error === 'no-speech') {
-          console.log("[Speech] No speech detected");
+          console.log("[Speech] No speech detected, continuing...");
           return;
         }
 
-        // Handle specific errors
-        if (event.error === 'audio-capture') {
-          this.handleError(new Error("No microphone was found or microphone is disabled"));
+        // Ignore aborted errors when stopping intentionally
+        if (event.error === 'aborted' && !this.isStarted) {
+          console.log("[Speech] Recognition aborted intentionally");
           return;
         }
 
-        if (event.error === 'not-allowed') {
-          this.handleError(new Error("Microphone access was not allowed"));
-          return;
+        // Map specific errors to user-friendly messages
+        let errorMessage: string;
+        switch (event.error) {
+          case 'audio-capture':
+            errorMessage = "No se detectó micrófono o está deshabilitado";
+            break;
+          case 'not-allowed':
+            errorMessage = "Acceso al micrófono denegado. Por favor, permita el acceso en la configuración del navegador.";
+            break;
+          case 'network':
+            errorMessage = "Error de red. Por favor, verifique su conexión.";
+            break;
+          case 'aborted':
+            errorMessage = "Reconocimiento de voz interrumpido";
+            break;
+          default:
+            errorMessage = `Error en el reconocimiento de voz: ${event.error}`;
         }
 
-        if (event.error === 'network') {
-          this.handleError(new Error("Network error occurred during speech recognition"));
-          return;
-        }
-
-        if (event.error === 'aborted') {
-          // Don't count aborted as an error if we're stopping intentionally
-          if (this.isStarted) {
-            this.handleError(new Error("Speech recognition was aborted"));
-          }
-          return;
-        }
-
-        this.handleError(new Error(`Speech recognition error: ${event.error}`));
+        this.handleError(new Error(errorMessage));
       };
 
       this.recognition.onresult = async (event: SpeechRecognitionEvent) => {

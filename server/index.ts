@@ -10,19 +10,16 @@ app.use((req, res, next) => {
 
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, sec-webrtc-priority');
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Cross-Origin-Opener-Policy', 'same-origin');
+  res.header('Cross-Origin-Embedder-Policy', 'require-corp');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
 
   // Special headers for WebSocket and WebRTC
   if (req.headers.upgrade === 'websocket') {
     res.header('Connection', 'Upgrade');
     res.header('Upgrade', 'websocket');
-  }
-
-  // Handle WebRTC specific headers
-  if (req.headers['sec-webrtc-priority']) {
-    res.header('Access-Control-Allow-Headers', 
-      res.getHeader('Access-Control-Allow-Headers') + ', sec-webrtc-priority');
   }
 
   if (req.method === 'OPTIONS') {
@@ -60,11 +57,6 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
       log(logLine);
     }
   });
