@@ -32,17 +32,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Set SSE headers before any write operation
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      // Set SSE headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+      });
 
-      // Important: Send initial newlines to establish SSE connection
-      res.write('\n');
-
-      // Send initial connection confirmation
+      // Send initial message
       const initialEvent = `data: ${JSON.stringify({ type: "connected" })}\n\n`;
       res.write(initialEvent);
 
@@ -65,9 +63,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.on('close', () => {
         console.log(`[Translations] Client disconnected from room ${roomId}`);
         clearInterval(keepAlive);
-        sseClients.get(roomId)?.delete({ res, language });
-        if (sseClients.get(roomId)?.size === 0) {
-          sseClients.delete(roomId);
+        const clients = sseClients.get(roomId);
+        if (clients) {
+          clients.forEach(client => {
+            if (client.res === res) {
+              clients.delete(client);
+            }
+          });
+          if (clients.size === 0) {
+            sseClients.delete(roomId);
+          }
         }
       });
 

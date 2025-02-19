@@ -32,6 +32,7 @@ export class SpeechHandler {
       onError
     );
 
+    // Reset error count periodically
     setInterval(() => {
       if (this.errorCount > 0) {
         console.log("[Speech] Resetting error count from", this.errorCount, "to 0");
@@ -89,7 +90,7 @@ export class SpeechHandler {
             this.MIN_RESTART_INTERVAL - timeSinceLastRestart
           );
 
-          console.log(`[Speech] Scheduling restart in ${delayBeforeRestart}ms`);
+          console.log(`[Speech] Scheduling restart in ${delayBeforeRestart} ms`);
 
           if (this.restartTimeout) {
             clearTimeout(this.restartTimeout);
@@ -100,10 +101,6 @@ export class SpeechHandler {
             console.log("[Speech] Restarting recognition");
             this.restart();
           }, delayBeforeRestart) as unknown as number;
-        } else {
-          console.log("[Speech] Too many errors, stopping recognition");
-          this.stop();
-          this.onError?.(new Error("El reconocimiento de voz se ha detenido debido a errores repetidos. Por favor, actualice la página para intentar nuevamente."));
         }
       };
 
@@ -142,7 +139,13 @@ export class SpeechHandler {
 
         this.errorCount++;
         console.log(`[Speech] Error ${this.errorCount}/${this.MAX_ERRORS}:`, errorMessage);
-        this.onError?.(new Error(errorMessage));
+
+        if (this.errorCount >= this.MAX_ERRORS) {
+          this.stop();
+          this.onError?.(new Error("El reconocimiento de voz se ha detenido debido a errores repetidos. Por favor, actualice la página para intentar nuevamente."));
+        } else {
+          this.onError?.(new Error(errorMessage));
+        }
       };
 
       this.recognition.onresult = async (event: SpeechRecognitionEvent) => {
@@ -229,6 +232,7 @@ export class SpeechHandler {
       }
     } else {
       console.log("[Speech] Recognition already started");
+      this.restart();
     }
   }
 
