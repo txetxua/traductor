@@ -126,7 +126,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           autoPlay
           playsInline
           muted={false}
-          className="absolute inset-0 w-full h-full object-contain bg-black"
+          className="absolute inset-0 w-full h-full object-cover bg-black"
           aria-label="Video remoto"
         />
 
