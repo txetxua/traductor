@@ -6,7 +6,6 @@ type ErrorCallback = (error: Error) => void;
 export class TranslationHandler {
   private eventSource: EventSource | null = null;
   private reconnectTimer: number | null = null;
-  private isConnected = false;
   private retryCount = 0;
   private maxRetries = 3;
   private pendingTranslations = new Set<string>();
@@ -27,11 +26,6 @@ export class TranslationHandler {
 
   private connect() {
     try {
-      if (this.eventSource?.readyState === EventSource.OPEN) {
-        console.log("[Translations] Already connected");
-        return;
-      }
-
       this.cleanup();
 
       const url = new URL(`${this.getApiBaseUrl()}/api/translations/stream/${this.roomId}`);
@@ -40,24 +34,21 @@ export class TranslationHandler {
 
       this.eventSource = new EventSource(url.toString());
 
-      this.eventSource.onopen = () => {
-        console.log("[Translations] SSE Connection opened");
-        this.isConnected = true;
+      this.eventSource.addEventListener('connected', () => {
+        console.log("[Translations] SSE Connection established");
         this.retryCount = 0;
-      };
+      });
 
-      this.eventSource.onmessage = (event) => {
+      this.eventSource.addEventListener('message', (event) => {
         try {
           console.log("[Translations] Raw message received:", event.data);
           const message = JSON.parse(event.data);
-          console.log("[Translations] Parsed message:", message);
 
-          if (message.type === "translation") {
-            // Mostrar el texto según el idioma seleccionado
+          if (message.type === 'translation') {
             const isLocal = message.from === this.language;
             const text = this.language === message.to ? message.translated : message.text;
 
-            console.log(`[Translations] Processing translation:`, {
+            console.log("[Translations] Processing translation:", {
               text,
               from: message.from,
               to: message.to,
@@ -75,11 +66,10 @@ export class TranslationHandler {
           console.error("[Translations] Message processing error:", error);
           this.handleError(error as Error);
         }
-      };
+      });
 
-      this.eventSource.onerror = (event) => {
-        console.error("[Translations] SSE Error:", event);
-        this.isConnected = false;
+      this.eventSource.onerror = () => {
+        console.error("[Translations] SSE Connection error");
 
         if (this.retryCount < this.maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, this.retryCount), 5000);
@@ -87,14 +77,16 @@ export class TranslationHandler {
 
           console.log(`[Translations] Reconnecting (${this.retryCount}/${this.maxRetries}) in ${delay}ms`);
 
-          if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+          }
+
           this.reconnectTimer = window.setTimeout(() => {
-            this.reconnectTimer = null;
             this.connect();
           }, delay);
         } else {
           const error = new Error("No se pudo establecer la conexión para las traducciones");
-          console.error("[Translations]", error);
+          console.error("[Translations] Connection failed:", error);
           this.onError?.(error);
         }
       };
@@ -123,12 +115,10 @@ export class TranslationHandler {
 
     try {
       console.log("[Translations] Requesting translation for:", text);
-      console.log("[Translations] Current language:", this.language);
+
+      const targetLanguage = this.language === "es" ? "it" : "es";
 
       this.pendingTranslations.add(text);
-
-      // Siempre traducir al otro idioma
-      const targetLanguage = this.language === "es" ? "it" : "es";
 
       const response = await fetch(`${this.getApiBaseUrl()}/api/translate`, {
         method: "POST",
@@ -165,7 +155,6 @@ export class TranslationHandler {
       this.reconnectTimer = null;
     }
 
-    this.isConnected = false;
     this.pendingTranslations.clear();
   }
 

@@ -32,17 +32,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Set SSE headers
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*'
-      });
+      // Set headers for SSE
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('Access-Control-Allow-Origin', '*');
 
-      // Send initial message
-      const initialEvent = `data: ${JSON.stringify({ type: "connected" })}\n\n`;
-      res.write(initialEvent);
+      // Send a test message to verify connection
+      res.write('event: connected\n');
+      res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
 
       // Store SSE client
       if (!sseClients.has(roomId)) {
@@ -52,10 +50,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[Translations] Client connected to room ${roomId} with language ${language}`);
 
-      // Keep connection alive with comments
+      // Keep connection alive
       const keepAlive = setInterval(() => {
         if (!res.writableEnded) {
-          res.write(': keepalive\n\n');
+          res.write(':keepalive\n\n');
         }
       }, 15000);
 
@@ -65,11 +63,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         clearInterval(keepAlive);
         const clients = sseClients.get(roomId);
         if (clients) {
-          clients.forEach(client => {
+          for (const client of Array.from(clients)) {
             if (client.res === res) {
               clients.delete(client);
             }
-          });
+          }
           if (clients.size === 0) {
             sseClients.delete(roomId);
           }
@@ -94,7 +92,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[Translations] Translation request for room ${roomId}:`, { text, from, to });
 
-      // For now, just echo back a mock translation
+      // Mock translation for now
       const translatedText = `[${to.toUpperCase()}] ${text}`;
 
       // Store translation for the room
@@ -103,7 +101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       translations.get(roomId)?.set(text, translatedText);
 
-      // Broadcast translation to all SSE clients in the room
+      // Broadcast translation to SSE clients
       const clients = sseClients.get(roomId);
       if (clients) {
         const message = {
@@ -114,19 +112,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
+        const eventData = `event: message\ndata: ${JSON.stringify(message)}\n\n`;
+
         console.log(`[Translations] Broadcasting to ${clients.size} clients in room ${roomId}`);
 
-        for (const client of clients) {
+        for (const client of Array.from(clients)) {
           try {
-            const event = `data: ${JSON.stringify(message)}\n\n`;
-            client.res.write(event);
+            if (!client.res.writableEnded) {
+              client.res.write(eventData);
+            }
           } catch (error) {
             console.error('[Translations] Error sending to client:', error);
           }
         }
       }
 
-      // Send success response
       res.json({ success: true });
 
     } catch (error) {
@@ -135,6 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Socket.IO handling remains the same
   io.on('connection', (socket) => {
     console.log("[SocketIO] New connection:", socket.id);
     let currentRoom: string | null = null;
@@ -145,7 +146,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           throw new Error('Room ID is required');
         }
 
-        // Leave previous room if any
         if (currentRoom) {
           socket.leave(currentRoom);
           const prevRoom = rooms.get(currentRoom);
@@ -160,18 +160,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentRoom = roomId;
         socket.join(roomId);
 
-        // Initialize room if needed
         if (!rooms.has(roomId)) {
           rooms.set(roomId, new Set());
         }
 
-        // Add client to room
         const room = rooms.get(roomId)!;
         room.add(socket.id);
 
         console.log(`[SocketIO] Client ${socket.id} joined room ${roomId}`);
 
-        // Notify client
         socket.emit('joined', {
           clientId: socket.id,
           clients: room.size
@@ -185,11 +182,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    // Handle WebRTC signaling
     socket.on('signal', (message: SignalingMessage) => {
       try {
         if (!currentRoom) {
-          console.log("[SocketIO] Signal received before joining room");
           socket.emit('error', {
             message: 'Debe unirse a una sala primero'
           });
