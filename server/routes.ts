@@ -21,10 +21,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   io.on('connection', (socket) => {
     console.log("[SocketIO] New connection:", socket.id);
-    let currentRoom: string;
+    let currentRoom: string | null = null;
 
     socket.on('join', ({ roomId }) => {
       try {
+        if (!roomId) {
+          throw new Error('Room ID is required');
+        }
+
+        // Leave previous room if any
+        if (currentRoom) {
+          socket.leave(currentRoom);
+          const prevRoom = rooms.get(currentRoom);
+          if (prevRoom) {
+            prevRoom.delete(socket.id);
+            if (prevRoom.size === 0) {
+              rooms.delete(currentRoom);
+            }
+          }
+        }
+
         currentRoom = roomId;
         socket.join(roomId);
 
@@ -45,28 +61,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           clients: room.size
         });
 
-      } catch (error) {
+      } catch (error: any) {
         console.error("[SocketIO] Join error:", error);
         socket.emit('error', {
-          message: 'Error al unirse a la sala'
+          message: error.message || 'Error al unirse a la sala'
         });
       }
     });
 
     // Handle WebRTC signaling
-    socket.on('signal', (message) => {
+    socket.on('signal', (message: SignalingMessage) => {
       try {
         if (!currentRoom) {
-          throw new Error('No room joined');
+          console.log("[SocketIO] Signal received before joining room");
+          socket.emit('error', {
+            message: 'Debe unirse a una sala primero'
+          });
+          return;
         }
 
-        console.log("[SocketIO] Broadcasting signal:", message.type);
+        const room = rooms.get(currentRoom);
+        if (!room) {
+          throw new Error('Room not found');
+        }
+
+        console.log(`[SocketIO] Broadcasting ${message.type} to room ${currentRoom}`);
         socket.to(currentRoom).emit('signal', message);
 
-      } catch (error) {
+      } catch (error: any) {
         console.error("[SocketIO] Signal error:", error);
         socket.emit('error', {
-          message: 'Error al procesar señal'
+          message: error.message || 'Error al procesar señal'
         });
       }
     });
