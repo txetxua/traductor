@@ -5,6 +5,7 @@ import { type SignalingMessage, type Language } from "@shared/schema";
 
 const rooms = new Map<string, Set<string>>();
 const translations = new Map<string, Map<string, string>>();
+const sseClients = new Map<string, Set<{ res: any, language: string }>>();
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -45,6 +46,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const initialEvent = `data: ${JSON.stringify({ type: "connected" })}\n\n`;
       res.write(initialEvent);
 
+      // Store SSE client
+      if (!sseClients.has(roomId)) {
+        sseClients.set(roomId, new Set());
+      }
+      sseClients.get(roomId)?.add({ res, language });
+
       console.log(`[Translations] Client connected to room ${roomId} with language ${language}`);
 
       // Keep connection alive with comments
@@ -58,6 +65,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.on('close', () => {
         console.log(`[Translations] Client disconnected from room ${roomId}`);
         clearInterval(keepAlive);
+        sseClients.get(roomId)?.delete({ res, language });
+        if (sseClients.get(roomId)?.size === 0) {
+          sseClients.delete(roomId);
+        }
       });
 
     } catch (error) {
@@ -79,7 +90,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Translations] Translation request for room ${roomId}:`, { text, from, to });
 
       // For now, just echo back a mock translation
-      // In a real implementation, this would call a translation service
       const translatedText = `[${to.toUpperCase()}] ${text}`;
 
       // Store translation for the room
@@ -88,8 +98,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       translations.get(roomId)?.set(text, translatedText);
 
-      // Broadcast translation to all clients in the room
-      const clients = rooms.get(roomId);
+      // Broadcast translation to all SSE clients in the room
+      const clients = sseClients.get(roomId);
       if (clients) {
         const message = {
           type: 'translation',
@@ -99,11 +109,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           to
         };
 
-        // Send through SSE to all clients in the room
-        const event = `data: ${JSON.stringify(message)}\n\n`;
-        res.write(event);
+        console.log(`[Translations] Broadcasting to ${clients.size} clients in room ${roomId}`);
+
+        for (const client of clients) {
+          try {
+            const event = `data: ${JSON.stringify(message)}\n\n`;
+            client.res.write(event);
+          } catch (error) {
+            console.error('[Translations] Error sending to client:', error);
+          }
+        }
       }
 
+      // Send success response
       res.json({ success: true });
 
     } catch (error) {
