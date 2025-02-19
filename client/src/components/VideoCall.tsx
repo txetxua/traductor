@@ -35,7 +35,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   useEffect(() => {
     async function setupCall() {
       try {
-        console.log("[VideoCall] Setting up call for room:", roomId);
+        console.log("[VideoCall] Setting up call for room:", roomId, "language:", language);
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -56,7 +56,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           const dataArray = new Uint8Array(analyser.frequencyBinCount);
           analyser.getByteFrequencyData(dataArray);
           const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-          setIsAudioActive(average > 20); 
+          setIsAudioActive(average > 20);
           requestAnimationFrame(checkAudioActivity);
         };
         checkAudioActivity();
@@ -72,7 +72,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           roomId,
           language,
           (text: string, isLocal: boolean) => {
-            console.log("[VideoCall] Transcript received:", { text, isLocal });
+            console.log("[VideoCall] Transcript received:", { text, isLocal, language });
             setTranscript(text);
           },
           (error: Error) => {
@@ -91,7 +91,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             console.log("[VideoCall] Received remote stream");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
-              remoteVideoRef.current.muted = false; 
+              remoteVideoRef.current.muted = false;
               try {
                 await remoteVideoRef.current.play();
               } catch (error) {
