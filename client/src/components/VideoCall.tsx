@@ -75,16 +75,20 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       if (!mounted) return;
       console.error("[VideoCall] Error:", error);
 
+      // Handle specific permission errors
       if (error.name === 'NotAllowedError') {
         setCameraError('Por favor, permite el acceso a la cámara y el micrófono para continuar');
       } else if (error.name === 'NotFoundError') {
         setCameraError('No se encontró cámara o micrófono en tu dispositivo');
       } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
         setCameraError('Tu cámara o micrófono está siendo usado por otra aplicación');
+      } else if (error.name === 'PermissionDeniedError') {
+        setCameraError('Acceso a la cámara o micrófono denegado');
       } else {
         setCameraError(error.message);
       }
 
+      // Try to recover from certain errors
       if (retryCount < maxRetries &&
           (error.name === 'NotReadableError' ||
            error.name === 'TrackStartError' ||
@@ -115,7 +119,18 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           currentStream = null;
         }
 
-        console.log("[VideoCall] Requesting media devices...");
+        // Request permissions first
+        const permissions = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+          .catch((error) => {
+            console.error("[VideoCall] Permission error:", error);
+            handleError(error);
+            throw error;
+          });
+
+        // If permissions granted, stop temporary stream
+        permissions.getTracks().forEach(track => track.stop());
+
+        console.log("[VideoCall] Requesting media devices with full config...");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -269,11 +284,12 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           autoPlay
           playsInline
           className="absolute inset-0 w-full h-full object-cover bg-black/10"
+          aria-label="Video de participante remoto"
         />
 
         {cameraError && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
-            <div className="bg-destructive p-4 rounded-lg">
+            <div className="bg-destructive p-4 rounded-lg" role="alert">
               {cameraError}
             </div>
           </div>
@@ -286,12 +302,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             muted
             playsInline
             className="w-full h-full object-cover rounded-lg shadow-lg bg-black/10"
+            aria-label="Tu video"
           />
         </div>
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />
 
-        <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none">
+        <div className="absolute bottom-24 left-0 right-0 flex flex-col items-center gap-4 pointer-events-none" aria-live="polite">
           {localTranscript && (
             <Subtitles
               transcript={localTranscript}
@@ -299,12 +316,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
                 ...subtitlesConfig,
                 color: "rgba(255, 255, 255, 0.7)"
               }}
+              aria-label="Subtítulos de tu voz"
             />
           )}
           {remoteTranscript && (
             <Subtitles
               transcript={remoteTranscript}
               config={subtitlesConfig}
+              aria-label="Subtítulos del participante remoto"
             />
           )}
         </div>

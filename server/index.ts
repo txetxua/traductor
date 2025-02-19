@@ -4,24 +4,25 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// CORS middleware specifically configured for WebSocket support
+// Enhanced CORS middleware with specific WebRTC and WebSocket support
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
-
-  // Log detailed request information for debugging
-  console.log("[Server] Request headers:", req.headers);
-  console.log("[Server] Request path:", req.path);
 
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'true');
 
-  // Handle WebSocket upgrade requests
-  if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-    console.log("[Server] Processing WebSocket upgrade request");
+  // Special headers for WebSocket and WebRTC
+  if (req.headers.upgrade === 'websocket') {
     res.header('Connection', 'Upgrade');
     res.header('Upgrade', 'websocket');
+  }
+
+  // Handle WebRTC specific headers
+  if (req.headers['sec-webrtc-priority']) {
+    res.header('Access-Control-Allow-Headers', 
+      res.getHeader('Access-Control-Allow-Headers') + ', sec-webrtc-priority');
   }
 
   if (req.method === 'OPTIONS') {
@@ -47,9 +48,8 @@ app.use((req, res, next) => {
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
 
-  // Log request details for debugging
   if (path.startsWith("/ws") || req.headers.upgrade) {
-    log(`WebSocket upgrade request: ${req.method} ${path}`);
+    log(`WebSocket/WebRTC upgrade request: ${req.method} ${path}`);
     log(`Headers: ${JSON.stringify(req.headers)}`);
   }
 
@@ -92,7 +92,7 @@ app.use((req, res, next) => {
     const PORT = 5000;
     server.listen(PORT, "0.0.0.0", () => {
       log(`Server running on port ${PORT}`);
-      log(`WebSocket server available at ws://0.0.0.0:${PORT}/ws`);
+      log(`WebSocket/WebRTC server available at wss://0.0.0.0:${PORT}/ws`);
     });
   } catch (error) {
     console.error("[Server] Fatal error:", error);

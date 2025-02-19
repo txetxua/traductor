@@ -1,0 +1,67 @@
+8hook.js:608 If you do not provide children, you must specify an aria-label for accessibility
+overrideMethod @ hook.js:608Understand this warningAI
+hook.js:608 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 STATE_CHANGE listeners added. Use emitter.setMaxListeners() to increase limit
+    at f (https://cdn.replit.com/_next/static/chunks/8707-107a7cb79bd90e58.js:1:79238)
+    at c.addListener (https://cdn.replit.com/_next/static/chunks/8707-107a7cb79bd90e58.js:1:81772)
+    at Object.onStateChanged (https://cdn.replit.com/_next/static/chunks/531-e5725959e726cce6.js:1:513705)
+    at https://cdn.replit.com/_next/static/chunks/531-e5725959e726cce6.js:1:2599911
+    at oO (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:153605)
+    at uB (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:182655)
+    at u_ (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:165471)
+    at r6 (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:114363)
+    at https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:181101
+    at uO (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:181107)
+    at uS (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:164474)
+    at C (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:207254)
+    at MessagePort.z (https://cdn.replit.com/_next/static/chunks/framework-16338597e4a61076.js:1:207784)
+overrideMethod @ hook.js:608Understand this warningAI
+framework-16338597e4a61076.js:1 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+_ @ framework-16338597e4a61076.js:1Understand this errorAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'ambient-light-sensor'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'battery'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'execution-while-not-rendered'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'execution-while-out-of-viewport'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'layout-animations'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'legacy-image-formats'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'navigation-override'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'oversized-images'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'publickey-credentials'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'speaker-selection'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'unoptimized-images'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Unrecognized feature: 'unsized-media'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Allow attribute will take precedence over 'allowfullscreen'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+framework-16338597e4a61076.js:1 Allow attribute will take precedence over 'allowpaymentrequest'.
+_ @ framework-16338597e4a61076.js:1Understand this warningAI
+hook.js:608 Invalid href 'https://c1c8161b-1ebc-4059-81d1-3392ead11450-00-a8xe3nh0smsm.picard.replit.dev//' passed to next/router in page: '/replEnvironmentDesktop'. Repeated forward-slashes (//) or backslashes \ are not valid in the href.
+overrideMethod @ hook.js:608Understand this errorAI
+workspace_iframe.html:32 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.Understand this errorAI
+workspace_iframe.html:32 Unrecognized feature: 'ambient-light-sensor'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'battery'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'execution-while-not-rendered'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'execution-while-out-of-viewport'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'layout-animations'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'legacy-image-formats'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'navigation-override'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'oversized-images'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'publickey-credentials'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'speaker-selection'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'unoptimized-images'.Understand this warningAI
+workspace_iframe.html:32 Unrecognized feature: 'unsized-media'.Understand this warningAI
+workspace_iframe.html:32 Allow attribute will take precedence over 'allowfullscreen'.Understand this warningAI
+workspace_iframe.html:32 Allow attribute will take precedence over 'allowpaymentrequest'.Understand this warningAI
+nuanria.FrameConnector.js:338 Uncaught SecurityError: Failed to read a named property 'document' from 'Window': Blocked a frame with origin "https://c1c8161b-1ebc-4059-81d1-3392ead11450-00-a8xe3nh0smsm.picard.replit.dev" from accessing a cross-origin frame.Understand this errorAI
+Console.js:61 [VideoCall] Requesting media devices...
+hook.js:608 Invalid href 'https://c1c8161b-1ebc-4059-81d1-3392ead11450-00-a8xe3nh0smsm.picard.replit.dev//call/zoxxoa' passed to next/router in page: '/replEnvironmentDesktop'. Repeated forward-slashes (//) or backslashes \ are not valid in the href.
