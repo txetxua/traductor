@@ -11,10 +11,10 @@ export class SpeechHandler {
   private restartTimeout?: number;
   private errorCount: number = 0;
   private lastRestartTime: number = 0;
-  private readonly MAX_ERRORS = 15; // Increased tolerance
-  private readonly ERROR_RESET_INTERVAL = 60000; // 1 minute
-  private readonly RESTART_DELAY = 2000; // 2 seconds
-  private readonly MIN_RESTART_INTERVAL = 3000; // 3 seconds
+  private readonly MAX_ERRORS = 15;
+  private readonly ERROR_RESET_INTERVAL = 60000;
+  private readonly RESTART_DELAY = 2000;
+  private readonly MIN_RESTART_INTERVAL = 3000;
   private isRestarting: boolean = false;
   private isStopping: boolean = false;
 
@@ -32,7 +32,6 @@ export class SpeechHandler {
       onError
     );
 
-    // Reset error count periodically
     setInterval(() => {
       if (this.errorCount > 0) {
         console.log("[Speech] Resetting error count from", this.errorCount, "to 0");
@@ -47,21 +46,8 @@ export class SpeechHandler {
         throw new Error("El reconocimiento de voz no está soportado en este navegador. Intente usar Chrome.");
       }
 
-      // Clean up existing recognition instance if it exists
-      if (this.recognition) {
-        console.log("[Speech] Cleaning up existing recognition instance");
-        this.recognition.onend = null;
-        this.recognition.onerror = null;
-        this.recognition.onresult = null;
-        try {
-          this.recognition.abort();
-        } catch (error) {
-          console.log("[Speech] Error during cleanup:", error);
-        }
-        this.recognition = undefined;
-      }
+      this.cleanup();
 
-      // Initialize new recognition instance
       const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
       this.recognition = new SpeechRecognition();
       this.recognition.continuous = true;
@@ -76,7 +62,7 @@ export class SpeechHandler {
       this.recognition.lang = langMap[this.language];
 
       this.recognition.onstart = () => {
-        console.log("[Speech] Recognition started successfully for language:", this.language);
+        console.log("[Speech] Recognition started for language:", this.language);
         this.isStarted = true;
         this.isRestarting = false;
         this.isStopping = false;
@@ -86,13 +72,11 @@ export class SpeechHandler {
       this.recognition.onend = () => {
         console.log("[Speech] Recognition ended");
 
-        // Don't restart if we're intentionally stopping
         if (this.isStopping) {
-          console.log("[Speech] Not restarting - recognition was stopped intentionally");
+          console.log("[Speech] Not restarting - stopped intentionally");
           return;
         }
 
-        // Don't schedule multiple restarts
         if (this.isRestarting) {
           console.log("[Speech] Already restarting - skipping additional restart");
           return;
@@ -113,10 +97,8 @@ export class SpeechHandler {
 
           this.isRestarting = true;
           this.restartTimeout = window.setTimeout(() => {
-            if (this.isStarted && !this.isStopping) {
-              console.log("[Speech] Restarting recognition");
-              this.restart();
-            }
+            console.log("[Speech] Restarting recognition");
+            this.restart();
           }, delayBeforeRestart) as unknown as number;
         } else {
           console.log("[Speech] Too many errors, stopping recognition");
@@ -128,11 +110,17 @@ export class SpeechHandler {
       this.recognition.onerror = (event) => {
         console.log("[Speech] Recognition error:", event.error);
 
-        // Ignore non-critical errors or expected errors during restart/stop
-        if (!this.isStarted || 
-            event.error === 'no-speech' || 
-            event.error === 'audio-capture' ||
-            (event.error === 'aborted' && (this.isRestarting || this.isStopping))) {
+        if (event.error === 'aborted') {
+          if (this.isRestarting || this.isStopping) {
+            console.log("[Speech] Ignoring aborted error during restart/stop");
+            return;
+          }
+          // Si no estamos reiniciando o deteniendo, iniciar un nuevo ciclo
+          this.restart();
+          return;
+        }
+
+        if (!this.isStarted || event.error === 'no-speech' || event.error === 'audio-capture') {
           console.log("[Speech] Ignoring expected error:", event.error);
           return;
         }
@@ -170,17 +158,12 @@ export class SpeechHandler {
               return;
             }
 
-            // Show local transcription immediately
-            console.log("[Speech] Sending local transcript");
             this.onTranscript(text, true);
 
-            // Reset error count on successful recognition
             if (this.errorCount > 0) {
               this.errorCount = Math.max(0, this.errorCount - 1);
             }
 
-            // Send for translation
-            console.log("[Speech] Requesting translation");
             await this.translationHandler.translate(text);
           }
         } catch (error) {
@@ -195,6 +178,21 @@ export class SpeechHandler {
     }
   }
 
+  private cleanup() {
+    if (this.recognition) {
+      console.log("[Speech] Cleaning up existing recognition instance");
+      this.recognition.onend = null;
+      this.recognition.onerror = null;
+      this.recognition.onresult = null;
+      try {
+        this.recognition.abort();
+      } catch (error) {
+        console.log("[Speech] Error during cleanup:", error);
+      }
+      this.recognition = undefined;
+    }
+  }
+
   private handleError(error: Error) {
     console.error("[Speech] Error:", error.message);
     this.onError?.(error);
@@ -202,8 +200,9 @@ export class SpeechHandler {
 
   private restart() {
     try {
+      this.cleanup();
       this.setupRecognition();
-      if (this.recognition && this.isStarted && !this.isStopping) {
+      if (this.recognition && !this.isStopping) {
         this.recognition.start();
       }
     } catch (error) {
