@@ -4,8 +4,6 @@ export class WebRTCConnection {
   private pc: RTCPeerConnection;
   private stream?: MediaStream;
   private pollingInterval: number | null = null;
-  private pendingCandidates: RTCIceCandidateInit[] = [];
-  private isConnected = false;
 
   constructor(
     private roomId: string,
@@ -28,20 +26,18 @@ export class WebRTCConnection {
     }
 
     this.pollingInterval = window.setInterval(async () => {
-      if (!this.isConnected) {
-        try {
-          const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`);
-          if (!response.ok) {
-            throw new Error(`Polling failed: ${response.status}`);
-          }
-
-          const messages: SignalingMessage[] = await response.json();
-          for (const message of messages) {
-            await this.handleSignalingMessage(message);
-          }
-        } catch (error) {
-          console.error("[WebRTC] Polling error:", error);
+      try {
+        const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`);
+        if (!response.ok) {
+          throw new Error(`Polling failed: ${response.status}`);
         }
+
+        const messages: SignalingMessage[] = await response.json();
+        for (const message of messages) {
+          await this.handleSignalingMessage(message);
+        }
+      } catch (error) {
+        console.error("[WebRTC] Polling error:", error);
       }
     }, 1000) as unknown as number;
   }
@@ -84,9 +80,6 @@ export class WebRTCConnection {
       console.log("[WebRTC] Local description set (answer)");
 
       await this.sendSignal({ type: "answer", payload: answer });
-
-      // Add any pending candidates
-      await this.processPendingCandidates();
     } catch (error) {
       console.error("[WebRTC] Error handling offer:", error);
       this.onError(error as Error);
@@ -102,9 +95,6 @@ export class WebRTCConnection {
 
       await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
       console.log("[WebRTC] Remote description set (answer)");
-
-      // Add any pending candidates
-      await this.processPendingCandidates();
     } catch (error) {
       console.error("[WebRTC] Error handling answer:", error);
       this.onError(error as Error);
@@ -113,31 +103,12 @@ export class WebRTCConnection {
 
   private async handleIceCandidate(candidate: RTCIceCandidateInit) {
     try {
-      if (!this.pc.remoteDescription) {
-        console.log("[WebRTC] Queuing ICE candidate");
-        this.pendingCandidates.push(candidate);
-        return;
+      if (this.pc.remoteDescription) {
+        await this.pc.addIceCandidate(candidate);
+        console.log("[WebRTC] ICE candidate added");
       }
-
-      await this.pc.addIceCandidate(candidate);
-      console.log("[WebRTC] ICE candidate added");
     } catch (error) {
       console.error("[WebRTC] Error adding ICE candidate:", error);
-    }
-  }
-
-  private async processPendingCandidates() {
-    console.log("[WebRTC] Processing pending candidates:", this.pendingCandidates.length);
-    while (this.pendingCandidates.length > 0) {
-      const candidate = this.pendingCandidates.shift();
-      if (candidate) {
-        try {
-          await this.pc.addIceCandidate(candidate);
-          console.log("[WebRTC] Pending ICE candidate added");
-        } catch (error) {
-          console.error("[WebRTC] Error adding pending ICE candidate:", error);
-        }
-      }
     }
   }
 
@@ -188,12 +159,6 @@ export class WebRTCConnection {
     this.pc.onconnectionstatechange = () => {
       console.log("[WebRTC] Connection state changed to:", this.pc.connectionState);
       this.onConnectionStateChange(this.pc.connectionState);
-
-      if (this.pc.connectionState === 'connected') {
-        this.isConnected = true;
-      } else if (this.pc.connectionState === 'failed' || this.pc.connectionState === 'disconnected') {
-        this.isConnected = false;
-      }
     };
 
     this.pc.onnegotiationneeded = async () => {
@@ -232,8 +197,6 @@ export class WebRTCConnection {
 
   close() {
     console.log("[WebRTC] Closing connection");
-    this.isConnected = false;
-
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
     }

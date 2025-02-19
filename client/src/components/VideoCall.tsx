@@ -20,90 +20,38 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [cameraError, setCameraError] = useState<string>();
-  const [audioEnabled, setAudioEnabled] = useState(true);
-  const [videoEnabled, setVideoEnabled] = useState(true);
-  const currentStreamRef = useRef<MediaStream | null>(null);
 
-  // Stop and cleanup media stream
-  const stopCurrentStream = () => {
-    if (currentStreamRef.current) {
-      currentStreamRef.current.getTracks().forEach(track => track.stop());
-      currentStreamRef.current = null;
-    }
-  };
-
-  // Initialize media devices with basic config
-  const initializeMediaDevices = async () => {
+  // Initialize media devices
+  const initializeCall = async () => {
     try {
-      stopCurrentStream();
-      setCameraError(undefined);
-
-      console.log("[VideoCall] Requesting media devices...");
+      console.log("[VideoCall] Starting call initialization");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: true
       });
 
-      if (!stream) {
-        throw new Error("No se pudo obtener acceso a la cámara y micrófono");
-      }
-
-      // Store stream reference
-      currentStreamRef.current = stream;
-
-      // Set local video
+      // Set up local video
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        try {
-          await localVideoRef.current.play();
-        } catch (error) {
-          console.error("[VideoCall] Error playing local video:", error);
-        }
       }
 
-      return stream;
-    } catch (error: any) {
-      console.error("[VideoCall] Media device error:", error);
-      const errorMessage = error.name === 'NotAllowedError' 
-        ? 'Por favor, permite el acceso a la cámara y el micrófono para continuar'
-        : error.message;
-      setCameraError(errorMessage);
-      throw error;
-    }
-  };
-
-  // Initialize the call
-  const initializeCall = async () => {
-    try {
-      const stream = await initializeMediaDevices();
-
+      // Initialize WebRTC
       const webrtc = new WebRTCConnection(
         roomId,
         (remoteStream) => {
           console.log("[VideoCall] Remote stream received");
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
-            try {
-              remoteVideoRef.current.play();
-            } catch (error) {
-              console.error("[VideoCall] Error playing remote video:", error);
-            }
           }
         },
         (state) => {
-          console.log("[VideoCall] Connection state:", state);
+          console.log("[VideoCall] Connection state changed:", state);
           setConnectionState(state);
 
           if (state === 'connected') {
             toast({
               title: "Conectado",
-              description: "Conexión establecida exitosamente.",
-            });
-          } else if (state === 'failed' || state === 'disconnected') {
-            toast({
-              variant: "destructive",
-              title: "Error de conexión",
-              description: "Se perdió la conexión con el otro participante.",
+              description: "Conexión establecida exitosamente",
             });
           }
         },
@@ -111,7 +59,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           console.error("[VideoCall] Error:", error);
           toast({
             variant: "destructive",
-            title: "Error en la llamada",
+            title: "Error",
             description: error.message,
           });
         }
@@ -120,27 +68,19 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       await webrtc.start(stream);
       webrtcRef.current = webrtc;
 
-      // Set initial media states
-      stream.getAudioTracks().forEach(track => {
-        track.enabled = audioEnabled;
-      });
-      stream.getVideoTracks().forEach(track => {
-        track.enabled = videoEnabled;
-      });
-
-    } catch (error) {
+    } catch (error: any) {
       console.error("[VideoCall] Initialization error:", error);
+      setCameraError(error.message);
     }
   };
 
-  // Setup and cleanup effect
+  // Setup and cleanup
   useEffect(() => {
     console.log("[VideoCall] Setting up call for room:", roomId);
     initializeCall();
 
     return () => {
-      console.log("[VideoCall] Cleaning up call");
-      stopCurrentStream();
+      console.log("[VideoCall] Cleaning up");
       if (webrtcRef.current) {
         webrtcRef.current.close();
       }
@@ -148,29 +88,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   }, [roomId]);
 
   const handleHangup = () => {
-    stopCurrentStream();
     if (webrtcRef.current) {
       webrtcRef.current.close();
     }
     setLocation("/");
-  };
-
-  const handleAudioToggle = (enabled: boolean) => {
-    setAudioEnabled(enabled);
-    if (currentStreamRef.current) {
-      currentStreamRef.current.getAudioTracks().forEach(track => {
-        track.enabled = enabled;
-      });
-    }
-  };
-
-  const handleVideoToggle = (enabled: boolean) => {
-    setVideoEnabled(enabled);
-    if (currentStreamRef.current) {
-      currentStreamRef.current.getVideoTracks().forEach(track => {
-        track.enabled = enabled;
-      });
-    }
   };
 
   return (
@@ -210,10 +131,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         connectionState={connectionState}
         roomId={roomId}
         onHangup={handleHangup}
-        audioEnabled={audioEnabled}
-        onAudioToggle={handleAudioToggle}
-        videoEnabled={videoEnabled}
-        onVideoToggle={handleVideoToggle}
       />
     </div>
   );
