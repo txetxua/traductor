@@ -11,30 +11,48 @@ export class WebRTCConnection {
     private onConnectionStateChange: (state: RTCPeerConnectionState) => void,
     private onError: (error: Error) => void
   ) {
-    console.log("[WebRTC] Initializing for room:", roomId);
-    this.initializePeerConnection();
+    const config: RTCConfiguration = {
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    };
+
+    this.pc = new RTCPeerConnection(config);
+    this.setupPeerConnection();
     this.startPolling();
   }
 
-  private getApiBaseUrl(): string {
-    return window.location.origin;
+  private setupPeerConnection() {
+    this.pc.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        this.sendSignal({
+          type: "ice-candidate",
+          payload: candidate
+        });
+      }
+    };
+
+    this.pc.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        this.onRemoteStream(remoteStream);
+      }
+    };
+
+    this.pc.onconnectionstatechange = () => {
+      this.onConnectionStateChange(this.pc.connectionState);
+    };
   }
 
   private async startPolling() {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-    }
-
     this.pollingInterval = window.setInterval(async () => {
       try {
-        const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`);
-        if (!response.ok) {
-          throw new Error(`Polling failed: ${response.status}`);
-        }
+        const response = await fetch(`/api/signal/${this.roomId}`);
+        if (!response.ok) return;
 
         const messages: SignalingMessage[] = await response.json();
         for (const message of messages) {
-          await this.handleSignalingMessage(message);
+          await this.handleSignal(message);
         }
       } catch (error) {
         console.error("[WebRTC] Polling error:", error);
@@ -42,170 +60,71 @@ export class WebRTCConnection {
     }, 1000) as unknown as number;
   }
 
-  private async handleSignalingMessage(message: SignalingMessage) {
+  private async handleSignal(message: SignalingMessage) {
     try {
-      console.log("[WebRTC] Received signal:", message.type, "State:", this.pc.signalingState);
-
       switch (message.type) {
         case "offer":
-          await this.handleOffer(message.payload);
+          if (this.pc.signalingState === "stable") {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+            const answer = await this.pc.createAnswer();
+            await this.pc.setLocalDescription(answer);
+            await this.sendSignal({ type: "answer", payload: answer });
+          }
           break;
+
         case "answer":
-          await this.handleAnswer(message.payload);
+          if (this.pc.signalingState === "have-local-offer") {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
+          }
           break;
+
         case "ice-candidate":
-          if (message.payload) {
-            await this.handleIceCandidate(message.payload);
+          if (this.pc.remoteDescription && message.payload) {
+            await this.pc.addIceCandidate(message.payload);
           }
           break;
       }
     } catch (error) {
-      console.error("[WebRTC] Error handling signal:", error);
+      console.error("[WebRTC] Signal error:", error);
       this.onError(error as Error);
-    }
-  }
-
-  private async handleOffer(offer: RTCSessionDescriptionInit) {
-    try {
-      if (this.pc.signalingState !== "stable") {
-        console.log("[WebRTC] Cannot handle offer in state:", this.pc.signalingState);
-        return;
-      }
-
-      await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
-      console.log("[WebRTC] Remote description set (offer)");
-
-      const answer = await this.pc.createAnswer();
-      await this.pc.setLocalDescription(answer);
-      console.log("[WebRTC] Local description set (answer)");
-
-      await this.sendSignal({ type: "answer", payload: answer });
-    } catch (error) {
-      console.error("[WebRTC] Error handling offer:", error);
-      this.onError(error as Error);
-    }
-  }
-
-  private async handleAnswer(answer: RTCSessionDescriptionInit) {
-    try {
-      if (this.pc.signalingState !== "have-local-offer") {
-        console.log("[WebRTC] Cannot handle answer in state:", this.pc.signalingState);
-        return;
-      }
-
-      await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-      console.log("[WebRTC] Remote description set (answer)");
-    } catch (error) {
-      console.error("[WebRTC] Error handling answer:", error);
-      this.onError(error as Error);
-    }
-  }
-
-  private async handleIceCandidate(candidate: RTCIceCandidateInit) {
-    try {
-      if (this.pc.remoteDescription) {
-        await this.pc.addIceCandidate(candidate);
-        console.log("[WebRTC] ICE candidate added");
-      }
-    } catch (error) {
-      console.error("[WebRTC] Error adding ICE candidate:", error);
     }
   }
 
   private async sendSignal(message: SignalingMessage) {
     try {
-      const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`, {
+      await fetch(`/api/signal/${this.roomId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(message)
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to send signal: ${response.status}`);
-      }
     } catch (error) {
-      console.error("[WebRTC] Error sending signal:", error);
+      console.error("[WebRTC] Send signal error:", error);
       this.onError(error as Error);
     }
-  }
-
-  private initializePeerConnection() {
-    const config: RTCConfiguration = {
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" }
-      ]
-    };
-
-    this.pc = new RTCPeerConnection(config);
-
-    this.pc.onicecandidate = ({ candidate }) => {
-      if (candidate) {
-        this.sendSignal({
-          type: "ice-candidate",
-          payload: candidate
-        }).catch(console.error);
-      }
-    };
-
-    this.pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        console.log("[WebRTC] Remote stream received");
-        this.onRemoteStream(remoteStream);
-      }
-    };
-
-    this.pc.onconnectionstatechange = () => {
-      console.log("[WebRTC] Connection state changed to:", this.pc.connectionState);
-      this.onConnectionStateChange(this.pc.connectionState);
-    };
-
-    this.pc.onnegotiationneeded = async () => {
-      try {
-        if (this.pc.signalingState === "stable") {
-          console.log("[WebRTC] Creating offer");
-          const offer = await this.pc.createOffer();
-          await this.pc.setLocalDescription(offer);
-          await this.sendSignal({
-            type: "offer",
-            payload: offer
-          });
-        }
-      } catch (error) {
-        console.error("[WebRTC] Error during negotiation:", error);
-        this.onError(error as Error);
-      }
-    };
   }
 
   async start(stream: MediaStream) {
-    try {
-      this.stream = stream;
-      this.stream.getTracks().forEach(track => {
-        if (this.stream) {
-          console.log("[WebRTC] Adding track:", track.kind);
-          this.pc.addTrack(track, this.stream);
-        }
-      });
-    } catch (error) {
-      console.error("[WebRTC] Error starting:", error);
-      this.onError(error as Error);
-      throw error;
-    }
+    this.stream = stream;
+    this.stream.getTracks().forEach(track => {
+      if (this.stream) {
+        this.pc.addTrack(track, this.stream);
+      }
+    });
+
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    await this.sendSignal({ type: "offer", payload: offer });
   }
 
   close() {
-    console.log("[WebRTC] Closing connection");
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
     }
 
-    this.pc.close();
-
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
     }
+
+    this.pc.close();
   }
 }

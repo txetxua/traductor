@@ -17,80 +17,72 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const webrtcRef = useRef<WebRTCConnection>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [error, setError] = useState<string>();
 
-  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
-  const [cameraError, setCameraError] = useState<string>();
+  useEffect(() => {
+    async function setupCall() {
+      try {
+        // Get user media
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        });
 
-  // Initialize media devices
-  const initializeCall = async () => {
-    try {
-      console.log("[VideoCall] Starting call initialization");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: true
-      });
+        // Set local video
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
 
-      // Set up local video
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-
-      // Initialize WebRTC
-      const webrtc = new WebRTCConnection(
-        roomId,
-        (remoteStream) => {
-          console.log("[VideoCall] Remote stream received");
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
-          }
-        },
-        (state) => {
-          console.log("[VideoCall] Connection state changed:", state);
-          setConnectionState(state);
-
-          if (state === 'connected') {
+        // Initialize WebRTC
+        const webrtc = new WebRTCConnection(
+          roomId,
+          (remoteStream) => {
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteStream;
+            }
+          },
+          (state) => {
+            if (state === 'connected') {
+              toast({
+                title: "Conectado",
+                description: "La conexión se ha establecido correctamente"
+              });
+            }
+          },
+          (error) => {
+            console.error("[VideoCall] Error:", error);
+            setError(error.message);
             toast({
-              title: "Conectado",
-              description: "Conexión establecida exitosamente",
+              variant: "destructive",
+              title: "Error de conexión",
+              description: error.message
             });
           }
-        },
-        (error) => {
-          console.error("[VideoCall] Error:", error);
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: error.message,
-          });
-        }
-      );
+        );
 
-      await webrtc.start(stream);
-      webrtcRef.current = webrtc;
+        await webrtc.start(stream);
+        webrtcRef.current = webrtc;
 
-    } catch (error: any) {
-      console.error("[VideoCall] Initialization error:", error);
-      setCameraError(error.message);
+      } catch (error: any) {
+        console.error("[VideoCall] Setup error:", error);
+        setError(error.message);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message
+        });
+      }
     }
-  };
 
-  // Setup and cleanup
-  useEffect(() => {
-    console.log("[VideoCall] Setting up call for room:", roomId);
-    initializeCall();
+    setupCall();
 
     return () => {
-      console.log("[VideoCall] Cleaning up");
-      if (webrtcRef.current) {
-        webrtcRef.current.close();
-      }
+      webrtcRef.current?.close();
     };
-  }, [roomId]);
+  }, [roomId, toast]);
 
   const handleHangup = () => {
-    if (webrtcRef.current) {
-      webrtcRef.current.close();
-    }
+    webrtcRef.current?.close();
     setLocation("/");
   };
 
@@ -102,13 +94,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           autoPlay
           playsInline
           className="absolute inset-0 w-full h-full object-cover bg-black/10"
-          aria-label="Video de participante remoto"
+          aria-label="Video remoto"
         />
 
-        {cameraError && (
+        {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
-            <div className="bg-destructive p-4 rounded-lg" role="alert">
-              {cameraError}
+            <div className="bg-destructive p-4 rounded-lg">
+              {error}
             </div>
           </div>
         )}
@@ -117,10 +109,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           <video
             ref={localVideoRef}
             autoPlay
-            muted
             playsInline
+            muted
             className="w-full h-full object-cover rounded-lg shadow-lg bg-black/10"
-            aria-label="Tu video"
+            aria-label="Video local"
           />
         </div>
       </div>
@@ -128,7 +120,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       <CallControls
         language={language}
         onLanguageChange={onLanguageChange}
-        connectionState={connectionState}
+        connectionState={undefined}
         roomId={roomId}
         onHangup={handleHangup}
       />
