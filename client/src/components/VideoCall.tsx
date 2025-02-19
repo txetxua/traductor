@@ -24,6 +24,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [videoEnabled, setVideoEnabled] = useState(true);
   const currentStreamRef = useRef<MediaStream | null>(null);
 
+  // Stop and cleanup media stream
   const stopCurrentStream = () => {
     if (currentStreamRef.current) {
       currentStreamRef.current.getTracks().forEach(track => track.stop());
@@ -31,6 +32,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     }
   };
 
+  // Initialize media devices with basic config
   const initializeMediaDevices = async () => {
     try {
       stopCurrentStream();
@@ -42,20 +44,35 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         video: true
       });
 
+      if (!stream) {
+        throw new Error("No se pudo obtener acceso a la cámara y micrófono");
+      }
+
+      // Store stream reference
       currentStreamRef.current = stream;
 
+      // Set local video
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        try {
+          await localVideoRef.current.play();
+        } catch (error) {
+          console.error("[VideoCall] Error playing local video:", error);
+        }
       }
 
       return stream;
     } catch (error: any) {
       console.error("[VideoCall] Media device error:", error);
-      setCameraError(error.message);
+      const errorMessage = error.name === 'NotAllowedError' 
+        ? 'Por favor, permite el acceso a la cámara y el micrófono para continuar'
+        : error.message;
+      setCameraError(errorMessage);
       throw error;
     }
   };
 
+  // Initialize the call
   const initializeCall = async () => {
     try {
       const stream = await initializeMediaDevices();
@@ -66,6 +83,11 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           console.log("[VideoCall] Remote stream received");
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
+            try {
+              remoteVideoRef.current.play();
+            } catch (error) {
+              console.error("[VideoCall] Error playing remote video:", error);
+            }
           }
         },
         (state) => {
@@ -111,26 +133,32 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     }
   };
 
+  // Setup and cleanup effect
   useEffect(() => {
+    console.log("[VideoCall] Setting up call for room:", roomId);
     initializeCall();
 
     return () => {
+      console.log("[VideoCall] Cleaning up call");
       stopCurrentStream();
-      webrtcRef.current?.close();
+      if (webrtcRef.current) {
+        webrtcRef.current.close();
+      }
     };
   }, [roomId]);
 
   const handleHangup = () => {
     stopCurrentStream();
-    webrtcRef.current?.close();
+    if (webrtcRef.current) {
+      webrtcRef.current.close();
+    }
     setLocation("/");
   };
 
   const handleAudioToggle = (enabled: boolean) => {
     setAudioEnabled(enabled);
-    const stream = currentStreamRef.current;
-    if (stream) {
-      stream.getAudioTracks().forEach(track => {
+    if (currentStreamRef.current) {
+      currentStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = enabled;
       });
     }
@@ -138,9 +166,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
   const handleVideoToggle = (enabled: boolean) => {
     setVideoEnabled(enabled);
-    const stream = currentStreamRef.current;
-    if (stream) {
-      stream.getVideoTracks().forEach(track => {
+    if (currentStreamRef.current) {
+      currentStreamRef.current.getVideoTracks().forEach(track => {
         track.enabled = enabled;
       });
     }

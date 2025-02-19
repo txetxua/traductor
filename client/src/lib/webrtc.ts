@@ -4,6 +4,8 @@ export class WebRTCConnection {
   private pc: RTCPeerConnection;
   private stream?: MediaStream;
   private pollingInterval: number | null = null;
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+  private isConnected = false;
 
   constructor(
     private roomId: string,
@@ -26,25 +28,27 @@ export class WebRTCConnection {
     }
 
     this.pollingInterval = window.setInterval(async () => {
-      try {
-        const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`);
-        if (!response.ok) {
-          throw new Error(`Polling failed: ${response.status}`);
-        }
+      if (!this.isConnected) {
+        try {
+          const response = await fetch(`${this.getApiBaseUrl()}/api/signal/${this.roomId}`);
+          if (!response.ok) {
+            throw new Error(`Polling failed: ${response.status}`);
+          }
 
-        const messages: SignalingMessage[] = await response.json();
-        for (const message of messages) {
-          await this.handleSignalingMessage(message);
+          const messages: SignalingMessage[] = await response.json();
+          for (const message of messages) {
+            await this.handleSignalingMessage(message);
+          }
+        } catch (error) {
+          console.error("[WebRTC] Polling error:", error);
         }
-      } catch (error) {
-        console.error("[WebRTC] Polling error:", error);
       }
     }, 1000) as unknown as number;
   }
 
   private async handleSignalingMessage(message: SignalingMessage) {
     try {
-      console.log("[WebRTC] Received signal:", message.type);
+      console.log("[WebRTC] Received signal:", message.type, "State:", this.pc.signalingState);
 
       switch (message.type) {
         case "offer":
@@ -61,42 +65,79 @@ export class WebRTCConnection {
       }
     } catch (error) {
       console.error("[WebRTC] Error handling signal:", error);
+      this.onError(error as Error);
     }
   }
 
   private async handleOffer(offer: RTCSessionDescriptionInit) {
     try {
       if (this.pc.signalingState !== "stable") {
-        console.log("[WebRTC] Ignoring offer in non-stable state");
+        console.log("[WebRTC] Cannot handle offer in state:", this.pc.signalingState);
         return;
       }
 
       await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+      console.log("[WebRTC] Remote description set (offer)");
+
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
+      console.log("[WebRTC] Local description set (answer)");
+
       await this.sendSignal({ type: "answer", payload: answer });
+
+      // Add any pending candidates
+      await this.processPendingCandidates();
     } catch (error) {
       console.error("[WebRTC] Error handling offer:", error);
+      this.onError(error as Error);
     }
   }
 
   private async handleAnswer(answer: RTCSessionDescriptionInit) {
     try {
-      if (this.pc.signalingState === "have-local-offer") {
-        await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+      if (this.pc.signalingState !== "have-local-offer") {
+        console.log("[WebRTC] Cannot handle answer in state:", this.pc.signalingState);
+        return;
       }
+
+      await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log("[WebRTC] Remote description set (answer)");
+
+      // Add any pending candidates
+      await this.processPendingCandidates();
     } catch (error) {
       console.error("[WebRTC] Error handling answer:", error);
+      this.onError(error as Error);
     }
   }
 
   private async handleIceCandidate(candidate: RTCIceCandidateInit) {
     try {
-      if (this.pc.remoteDescription) {
-        await this.pc.addIceCandidate(candidate);
+      if (!this.pc.remoteDescription) {
+        console.log("[WebRTC] Queuing ICE candidate");
+        this.pendingCandidates.push(candidate);
+        return;
       }
+
+      await this.pc.addIceCandidate(candidate);
+      console.log("[WebRTC] ICE candidate added");
     } catch (error) {
       console.error("[WebRTC] Error adding ICE candidate:", error);
+    }
+  }
+
+  private async processPendingCandidates() {
+    console.log("[WebRTC] Processing pending candidates:", this.pendingCandidates.length);
+    while (this.pendingCandidates.length > 0) {
+      const candidate = this.pendingCandidates.shift();
+      if (candidate) {
+        try {
+          await this.pc.addIceCandidate(candidate);
+          console.log("[WebRTC] Pending ICE candidate added");
+        } catch (error) {
+          console.error("[WebRTC] Error adding pending ICE candidate:", error);
+        }
+      }
     }
   }
 
@@ -113,6 +154,7 @@ export class WebRTCConnection {
       }
     } catch (error) {
       console.error("[WebRTC] Error sending signal:", error);
+      this.onError(error as Error);
     }
   }
 
@@ -146,11 +188,18 @@ export class WebRTCConnection {
     this.pc.onconnectionstatechange = () => {
       console.log("[WebRTC] Connection state changed to:", this.pc.connectionState);
       this.onConnectionStateChange(this.pc.connectionState);
+
+      if (this.pc.connectionState === 'connected') {
+        this.isConnected = true;
+      } else if (this.pc.connectionState === 'failed' || this.pc.connectionState === 'disconnected') {
+        this.isConnected = false;
+      }
     };
 
     this.pc.onnegotiationneeded = async () => {
       try {
         if (this.pc.signalingState === "stable") {
+          console.log("[WebRTC] Creating offer");
           const offer = await this.pc.createOffer();
           await this.pc.setLocalDescription(offer);
           await this.sendSignal({
@@ -160,6 +209,7 @@ export class WebRTCConnection {
         }
       } catch (error) {
         console.error("[WebRTC] Error during negotiation:", error);
+        this.onError(error as Error);
       }
     };
   }
@@ -169,20 +219,25 @@ export class WebRTCConnection {
       this.stream = stream;
       this.stream.getTracks().forEach(track => {
         if (this.stream) {
+          console.log("[WebRTC] Adding track:", track.kind);
           this.pc.addTrack(track, this.stream);
         }
       });
     } catch (error) {
       console.error("[WebRTC] Error starting:", error);
+      this.onError(error as Error);
       throw error;
     }
   }
 
   close() {
     console.log("[WebRTC] Closing connection");
+    this.isConnected = false;
+
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
     }
+
     this.pc.close();
 
     if (this.pollingInterval) {
