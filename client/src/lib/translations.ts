@@ -44,6 +44,9 @@ export class TranslationHandler {
         console.log("[Translations] SSE Connection opened");
         this.isConnected = true;
         this.retryCount = 0;
+
+        // Send a test message to verify the connection
+        this.translate("Test connection");
       };
 
       this.eventSource.onmessage = (event) => {
@@ -54,13 +57,6 @@ export class TranslationHandler {
 
           if (message.type === "translation") {
             const isLocal = message.from === this.language;
-
-            // Para mensajes locales (el usuario está hablando):
-            // - Si el usuario habla español, mostrar el texto original en español
-            // - Si el usuario habla italiano, mostrar el texto original en italiano
-            // Para mensajes remotos (el otro usuario está hablando):
-            // - Si el usuario local usa español, mostrar la traducción en español
-            // - Si el usuario local usa italiano, mostrar la traducción en italiano
             const text = isLocal ? message.text : message.translated;
 
             console.log(`[Translations] Processing ${isLocal ? 'local' : 'remote'} translation:`, {
@@ -78,13 +74,12 @@ export class TranslationHandler {
           }
         } catch (error) {
           console.error("[Translations] Message processing error:", error);
-          this.onError?.(error as Error);
+          this.handleError(error as Error);
         }
       };
 
       this.eventSource.onerror = (event) => {
-        const error = event as ErrorEvent;
-        console.error("[Translations] SSE Error:", error.message);
+        console.error("[Translations] SSE Error:", event);
         this.isConnected = false;
 
         if (this.retryCount < this.maxRetries) {
@@ -93,12 +88,13 @@ export class TranslationHandler {
 
           console.log(`[Translations] Reconnecting (${this.retryCount}/${this.maxRetries}) in ${delay}ms`);
 
+          if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
           this.reconnectTimer = window.setTimeout(() => {
             this.reconnectTimer = null;
             this.connect();
           }, delay);
         } else {
-          const error = new Error("Failed to establish SSE connection");
+          const error = new Error("No se pudo establecer la conexión para las traducciones");
           console.error("[Translations]", error);
           this.onError?.(error);
         }
@@ -106,8 +102,13 @@ export class TranslationHandler {
 
     } catch (error) {
       console.error("[Translations] Setup error:", error);
-      this.onError?.(error as Error);
+      this.handleError(error as Error);
     }
+  }
+
+  private handleError(error: Error) {
+    console.error("[Translations] Error:", error);
+    this.onError?.(error);
   }
 
   async translate(text: string) {
@@ -127,9 +128,6 @@ export class TranslationHandler {
 
       this.pendingTranslations.add(text);
 
-      // Siempre traducir al idioma opuesto:
-      // - Si el hablante usa español, traducir a italiano
-      // - Si el hablante usa italiano, traducir a español
       const targetLanguage = this.language === "es" ? "it" : "es";
 
       const response = await fetch(`${this.getApiBaseUrl()}/api/translate`, {
@@ -144,7 +142,7 @@ export class TranslationHandler {
       });
 
       if (!response.ok) {
-        throw new Error(`Translation request failed: ${response.status}`);
+        throw new Error(`Error en la traducción: ${response.status}`);
       }
 
       const data = await response.json();
@@ -152,7 +150,7 @@ export class TranslationHandler {
     } catch (error) {
       console.error("[Translations] Translation error:", error);
       this.pendingTranslations.delete(text);
-      this.onError?.(error as Error);
+      this.handleError(error as Error);
     }
   }
 

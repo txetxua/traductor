@@ -7,6 +7,7 @@ import CallControls from "@/components/CallControls";
 import Subtitles from "@/components/Subtitles";
 import SubtitlesConfig from "@/components/SubtitlesConfig";
 import { useToast } from "@/hooks/use-toast";
+import { Mic } from "lucide-react";
 
 interface Props {
   roomId: string;
@@ -24,6 +25,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [error, setError] = useState<string>();
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>();
   const [transcript, setTranscript] = useState<string>("");
+  const [isAudioActive, setIsAudioActive] = useState(false);
   const [subtitlesConfig, setSubtitlesConfig] = useState({
     fontSize: 24,
     fontFamily: "sans",
@@ -35,13 +37,30 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
       try {
         console.log("[VideoCall] Setting up call for room:", roomId);
 
-        // Get user media
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
-          audio: true
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
         });
 
-        // Set local video
+        const audioContext = new AudioContext();
+        const mediaStreamSource = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        mediaStreamSource.connect(analyser);
+
+        const checkAudioActivity = () => {
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          analyser.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          setIsAudioActive(average > 20); 
+          requestAnimationFrame(checkAudioActivity);
+        };
+        checkAudioActivity();
+
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           await localVideoRef.current.play().catch(error => {
@@ -49,7 +68,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           });
         }
 
-        // Initialize Speech Recognition
         speechRef.current = new SpeechHandler(
           roomId,
           language,
@@ -67,13 +85,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           }
         );
 
-        // Initialize WebRTC
         const webrtc = new WebRTCConnection(
           roomId,
           async (remoteStream) => {
             console.log("[VideoCall] Received remote stream");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
+              remoteVideoRef.current.muted = false; 
               try {
                 await remoteVideoRef.current.play();
               } catch (error) {
@@ -95,11 +113,9 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
                 title: "Conectado",
                 description: "La conexión se ha establecido correctamente"
               });
-              // Start speech recognition when connected
               speechRef.current?.start();
             } else if (state === 'failed' || state === 'disconnected') {
               setError("La conexión se ha perdido. Intentando reconectar...");
-              // Stop speech recognition on disconnection
               speechRef.current?.stop();
             }
           },
@@ -164,7 +180,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          muted={false}
           className="w-full h-full object-cover bg-black"
           aria-label="Video remoto"
         />
@@ -186,6 +201,11 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
             className="w-full h-full object-cover rounded-lg shadow-lg bg-black"
             aria-label="Video local"
           />
+          {isAudioActive && (
+            <div className="absolute bottom-2 right-2 bg-green-500 p-2 rounded-full">
+              <Mic className="h-4 w-4 text-white" />
+            </div>
+          )}
         </div>
 
         <SubtitlesConfig onChange={setSubtitlesConfig} />

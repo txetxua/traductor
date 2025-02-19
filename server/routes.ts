@@ -1,9 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
-import { type SignalingMessage } from "@shared/schema";
+import { type SignalingMessage, type Language } from "@shared/schema";
 
 const rooms = new Map<string, Set<string>>();
+const translations = new Map<string, Map<string, string>>();
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -62,6 +63,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('[Translations] Error setting up SSE:', error);
       res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  // Add translation endpoint
+  app.post('/api/translate', async (req, res) => {
+    try {
+      const { text, from, to, roomId } = req.body;
+
+      if (!text || !from || !to || !roomId) {
+        res.status(400).json({ error: 'Missing required fields' });
+        return;
+      }
+
+      console.log(`[Translations] Translation request for room ${roomId}:`, { text, from, to });
+
+      // For now, just echo back a mock translation
+      // In a real implementation, this would call a translation service
+      const translatedText = `[${to.toUpperCase()}] ${text}`;
+
+      // Store translation for the room
+      if (!translations.has(roomId)) {
+        translations.set(roomId, new Map());
+      }
+      translations.get(roomId)?.set(text, translatedText);
+
+      // Broadcast translation to all clients in the room
+      const clients = rooms.get(roomId);
+      if (clients) {
+        const message = {
+          type: 'translation',
+          text,
+          translated: translatedText,
+          from,
+          to
+        };
+
+        // Send through SSE to all clients in the room
+        const event = `data: ${JSON.stringify(message)}\n\n`;
+        res.write(event);
+      }
+
+      res.json({ success: true });
+
+    } catch (error) {
+      console.error('[Translations] Translation error:', error);
+      res.status(500).json({ error: 'Translation failed' });
     }
   });
 
