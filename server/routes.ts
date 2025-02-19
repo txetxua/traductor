@@ -19,41 +19,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   console.log("[SocketIO] Server initialized");
 
-  // Setup SSE translation endpoint with proper MIME type and headers
+  // Setup SSE translation endpoint
   app.get('/api/translations/stream/:roomId', (req, res) => {
-    const roomId = req.params.roomId;
-    const language = req.query.language as string;
+    try {
+      const roomId = req.params.roomId;
+      const language = req.query.language as string;
 
-    if (!roomId || !language) {
-      res.status(400).json({ error: 'Room ID and language are required' });
-      return;
-    }
-
-    // Set proper headers for SSE
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*'
-    });
-
-    // Send initial connection confirmation
-    res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
-
-    // Keep connection alive
-    const keepAlive = setInterval(() => {
-      if (!res.writableEnded) {
-        res.write(': keepalive\n\n');
+      if (!roomId || !language) {
+        res.status(400).json({ error: 'Room ID and language are required' });
+        return;
       }
-    }, 30000);
 
-    // Clean up on close
-    req.on('close', () => {
-      console.log(`[Translations] Client disconnected from room ${roomId}`);
-      clearInterval(keepAlive);
-    });
+      // Set SSE headers before any write operation
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('Access-Control-Allow-Origin', '*');
 
-    console.log(`[Translations] Client connected to room ${roomId} with language ${language}`);
+      // Important: Send initial newlines to establish SSE connection
+      res.write('\n');
+
+      // Send initial connection confirmation
+      const initialEvent = `data: ${JSON.stringify({ type: "connected" })}\n\n`;
+      res.write(initialEvent);
+
+      console.log(`[Translations] Client connected to room ${roomId} with language ${language}`);
+
+      // Keep connection alive with comments
+      const keepAlive = setInterval(() => {
+        if (!res.writableEnded) {
+          res.write(': keepalive\n\n');
+        }
+      }, 15000);
+
+      // Clean up on close
+      req.on('close', () => {
+        console.log(`[Translations] Client disconnected from room ${roomId}`);
+        clearInterval(keepAlive);
+      });
+
+    } catch (error) {
+      console.error('[Translations] Error setting up SSE:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
   });
 
   io.on('connection', (socket) => {
