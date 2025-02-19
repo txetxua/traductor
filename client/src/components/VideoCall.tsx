@@ -87,7 +87,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
 
       } catch (error: any) {
         console.error("[VideoCall] Setup error:", error);
-        const errorMessage = error.name === 'NotAllowedError' 
+        const errorMessage = error.name === 'NotAllowedError'
           ? "No se ha permitido el acceso a la cámara y micrófono. Por favor, conceda los permisos necesarios."
           : error.message;
 
@@ -126,7 +126,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           autoPlay
           playsInline
           muted={false}
-          className="absolute inset-0 w-full h-full object-cover bg-black"
+          className="absolute inset-0 w-full h-full object-contain bg-black"
           aria-label="Video remoto"
         />
 
@@ -138,7 +138,7 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           </div>
         )}
 
-        <div className="absolute bottom-4 right-4 w-48 aspect-video">
+        <div className="absolute top-4 right-4 w-48 aspect-video">
           <video
             ref={localVideoRef}
             autoPlay
