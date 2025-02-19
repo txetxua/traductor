@@ -36,11 +36,10 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   const [cameraError, setCameraError] = useState<string>();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 3;
 
   const localTimerRef = useRef<NodeJS.Timeout>();
   const remoteTimerRef = useRef<NodeJS.Timeout>();
+  const currentStreamRef = useRef<MediaStream | null>(null);
 
   const clearTranscriptAfterDelay = (isLocal: boolean, delay: number = 5000) => {
     const timerRef = isLocal ? localTimerRef : remoteTimerRef;
@@ -54,203 +53,158 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
     }, delay);
   };
 
-  useEffect(() => {
-    let mounted = true;
-    let currentStream: MediaStream | null = null;
+  const handleSpeechResult = (text: string, isLocal: boolean) => {
+    console.log(`[VideoCall] ${isLocal ? 'Local' : 'Remote'} transcript received:`, text);
+    if (isLocal) {
+      setLocalTranscript(text);
+      clearTranscriptAfterDelay(true);
+    } else {
+      setRemoteTranscript(text);
+      clearTranscriptAfterDelay(false);
+    }
+  };
 
-    const handleSpeechResult = (text: string, isLocal: boolean) => {
-      if (!mounted) return;
-      console.log(`[VideoCall] ${isLocal ? 'Local' : 'Remote'} transcript received:`, text);
+  const stopCurrentStream = () => {
+    if (currentStreamRef.current) {
+      currentStreamRef.current.getTracks().forEach(track => track.stop());
+      currentStreamRef.current = null;
+    }
+  };
 
-      if (isLocal) {
-        setLocalTranscript(text);
-        clearTranscriptAfterDelay(true);
-      } else {
-        setRemoteTranscript(text);
-        clearTranscriptAfterDelay(false);
+  const initializeMediaDevices = async () => {
+    try {
+      stopCurrentStream();
+      setCameraError(undefined);
+
+      console.log("[VideoCall] Requesting media devices...");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        }
+      });
+
+      currentStreamRef.current = stream;
+      console.log("[VideoCall] Media stream obtained");
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play().catch(console.error);
       }
-    };
 
-    const handleError = async (error: Error) => {
-      if (!mounted) return;
-      console.error("[VideoCall] Error:", error);
+      return stream;
+    } catch (error: any) {
+      console.error("[VideoCall] Media device error:", error);
+      let errorMessage = error.message;
 
       // Handle specific permission errors
       if (error.name === 'NotAllowedError') {
-        setCameraError('Por favor, permite el acceso a la cámara y el micrófono para continuar');
+        errorMessage = 'Por favor, permite el acceso a la cámara y el micrófono para continuar';
       } else if (error.name === 'NotFoundError') {
-        setCameraError('No se encontró cámara o micrófono en tu dispositivo');
-      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-        setCameraError('Tu cámara o micrófono está siendo usado por otra aplicación');
-      } else if (error.name === 'PermissionDeniedError') {
-        setCameraError('Acceso a la cámara o micrófono denegado');
-      } else {
-        setCameraError(error.message);
+        errorMessage = 'No se encontró cámara o micrófono en tu dispositivo';
+      } else if (error.name === 'NotReadableError') {
+        errorMessage = 'Tu cámara o micrófono está siendo usado por otra aplicación';
       }
 
-      // Try to recover from certain errors
-      if (retryCount < maxRetries &&
-          (error.name === 'NotReadableError' ||
-           error.name === 'TrackStartError' ||
-           error.message.includes('failed to connect'))) {
-        setRetryCount(prev => prev + 1);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (mounted) {
-          initializeCall();
-        }
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Error en la llamada",
-          description: error.message,
-        });
-      }
-    };
+      setCameraError(errorMessage);
+      throw error;
+    }
+  };
 
-    async function initializeCall() {
-      if (!mounted) return;
+  const initializeCall = async () => {
+    try {
+      const stream = await initializeMediaDevices();
 
-      try {
-        setCameraError(undefined);
-
-        // Clean up existing stream
-        if (currentStream) {
-          currentStream.getTracks().forEach(track => track.stop());
-          currentStream = null;
-        }
-
-        // Request permissions first
-        const permissions = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-          .catch((error) => {
-            console.error("[VideoCall] Permission error:", error);
-            handleError(error);
-            throw error;
-          });
-
-        // If permissions granted, stop temporary stream
-        permissions.getTracks().forEach(track => track.stop());
-
-        console.log("[VideoCall] Requesting media devices with full config...");
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 30 }
+      // Initialize WebRTC
+      const webrtc = new WebRTCConnection(
+        roomId,
+        (remoteStream) => {
+          console.log("[VideoCall] Remote stream received");
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStream;
+            remoteVideoRef.current.play().catch(console.error);
           }
-        });
+        },
+        (state) => {
+          console.log("[VideoCall] Connection state:", state);
+          setConnectionState(state);
 
-        currentStream = stream;
-        console.log("[VideoCall] Media stream obtained");
-
-        if (!mounted) {
-          stream.getTracks().forEach(track => track.stop());
-          return;
-        }
-
-        // Set up local video
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          await localVideoRef.current.play().catch(console.error);
-        }
-
-        // Initialize WebRTC
-        const webrtc = new WebRTCConnection(
-          roomId,
-          (remoteStream) => {
-            if (!mounted) return;
-            console.log("[VideoCall] Remote stream received");
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = remoteStream;
-              remoteVideoRef.current.play().catch(console.error);
-            }
-          },
-          (state) => {
-            if (!mounted) return;
-            console.log("[VideoCall] Connection state:", state);
-            setConnectionState(state);
-
-            if (state === 'failed' || state === 'disconnected') {
-              toast({
-                variant: "destructive",
-                title: "Error de conexión",
-                description: "Se perdió la conexión con el otro participante. Intentando reconectar...",
-              });
-            } else if (state === 'connected') {
-              toast({
-                title: "Conectado",
-                description: "Conexión establecida exitosamente.",
-              });
-              setRetryCount(0);
-            }
-          },
-          handleError
-        );
-
-        await webrtc.start(stream);
-        console.log("[VideoCall] WebRTC connection started");
-
-        // Set initial audio/video state
-        stream.getAudioTracks().forEach(track => {
-          track.enabled = audioEnabled;
-        });
-        stream.getVideoTracks().forEach(track => {
-          track.enabled = videoEnabled;
-        });
-
-        // Start speech recognition
-        const speech = new SpeechHandler(
-          roomId,
-          language,
-          handleSpeechResult,
-          (error: Error) => {
-            if (!mounted) return;
-            console.error("[VideoCall] Speech recognition error:", error);
+          if (state === 'connected') {
+            toast({
+              title: "Conectado",
+              description: "Conexión establecida exitosamente.",
+            });
+          } else if (state === 'failed' || state === 'disconnected') {
             toast({
               variant: "destructive",
-              title: "Error en reconocimiento de voz",
-              description: error.message,
+              title: "Error de conexión",
+              description: "Se perdió la conexión con el otro participante.",
             });
           }
-        );
-        speech.start();
+        },
+        (error) => {
+          console.error("[VideoCall] Error:", error);
+          toast({
+            variant: "destructive",
+            title: "Error en la llamada",
+            description: error.message,
+          });
+        }
+      );
 
-        webrtcRef.current = webrtc;
-        speechRef.current = speech;
+      await webrtc.start(stream);
+      webrtcRef.current = webrtc;
 
-      } catch (error) {
-        console.error("[VideoCall] Initialization error:", error);
-        handleError(error as Error);
-      }
+      // Initialize speech recognition
+      const speech = new SpeechHandler(
+        roomId,
+        language,
+        handleSpeechResult,
+        (error) => {
+          console.error("[VideoCall] Speech error:", error);
+          toast({
+            variant: "destructive",
+            title: "Error en reconocimiento de voz",
+            description: error.message,
+          });
+        }
+      );
+      speech.start();
+      speechRef.current = speech;
+
+      // Set initial media states
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = audioEnabled;
+      });
+      stream.getVideoTracks().forEach(track => {
+        track.enabled = videoEnabled;
+      });
+
+    } catch (error) {
+      console.error("[VideoCall] Initialization error:", error);
     }
+  };
 
+  useEffect(() => {
     initializeCall();
 
     return () => {
-      mounted = false;
-      if (localTimerRef.current) {
-        clearTimeout(localTimerRef.current);
-      }
-      if (remoteTimerRef.current) {
-        clearTimeout(remoteTimerRef.current);
-      }
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
+      stopCurrentStream();
+      if (localTimerRef.current) clearTimeout(localTimerRef.current);
+      if (remoteTimerRef.current) clearTimeout(remoteTimerRef.current);
       webrtcRef.current?.close();
       speechRef.current?.stop();
     };
-  }, [roomId, language, toast, videoEnabled, audioEnabled, retryCount]);
+  }, [roomId, language, toast, audioEnabled, videoEnabled]);
 
   const handleHangup = () => {
-    const stream = localVideoRef.current?.srcObject as MediaStream;
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
+    stopCurrentStream();
     webrtcRef.current?.close();
     speechRef.current?.stop();
     setLocation("/");
