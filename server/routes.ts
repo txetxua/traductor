@@ -19,6 +19,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   console.log("[SocketIO] Server initialized");
 
+  // Setup SSE translation endpoint
+  app.get('/api/translations/stream/:roomId', (req, res) => {
+    const roomId = req.params.roomId;
+    const language = req.query.language as string;
+
+    if (!roomId || !language) {
+      res.status(400).json({ error: 'Room ID and language are required' });
+      return;
+    }
+
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    // Keep connection alive
+    const keepAlive = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 30000);
+
+    // Clean up on close
+    res.on('close', () => {
+      console.log(`[Translations] Client disconnected from room ${roomId}`);
+      clearInterval(keepAlive);
+      res.end();
+    });
+
+    console.log(`[Translations] Client connected to room ${roomId} with language ${language}`);
+  });
+
   io.on('connection', (socket) => {
     console.log("[SocketIO] New connection:", socket.id);
     let currentRoom: string | null = null;

@@ -1,0 +1,28 @@
+translations.ts:39 [Translations] Connecting to: https://c1c8161b-1ebc-4059-81d1-3392ead11450-00-a8xe3nh0smsm.picard.replit.dev/api/translations/stream/yelm28?language=it
+yelm28:1 EventSource's response has a MIME type ("text/html") that is not "text/event-stream". Aborting the connection.Understand this errorAI
+hook.js:608 [Translations] SSE Error: undefined
+overrideMethod @ hook.js:608Understand this errorAI
+translations.ts:94 [Translations] Reconnecting (2/3) in 2000ms
+translations.ts:39 [Translations] Connecting to: https://c1c8161b-1ebc-4059-81d1-3392ead11450-00-a8xe3nh0smsm.picard.replit.dev/api/translations/stream/yelm28?language=it
+yelm28:1 EventSource's response has a MIME type ("text/html") that is not "text/event-stream". Aborting the connection.Understand this errorAI
+hook.js:608 [Translations] SSE Error: undefined
+overrideMethod @ hook.js:608Understand this errorAI
+translations.ts:94 [Translations] Reconnecting (3/3) in 4000ms
+speech.ts:103 [Speech] Recognition error: aborted 
+speech.ts:75 [Speech] Recognition ended
+speech.ts:84 [Speech] Scheduling restart in 2000 ms
+webrtc.ts:137 [WebRTC] Connection state changed: connected
+VideoCall.tsx:90 [VideoCall] Connection state: connected
+speech.ts:209 [Speech] Recognition already started
+speech.ts:91 [Speech] Restarting recognition
+speech.ts:65 [Speech] Setting language to: it-IT
+speech.ts:69 [Speech] Recognition started for language: it
+translations.ts:39 [Translations] Connecting to: https://c1c8161b-1ebc-4059-81d1-3392ead11450-00-a8xe3nh0smsm.picard.replit.dev/api/translations/stream/yelm28?language=it
+yelm28:1 EventSource's response has a MIME type ("text/html") that is not "text/event-stream". Aborting the connection.Understand this errorAI
+hook.js:608 [Translations] SSE Error: undefined
+overrideMethod @ hook.js:608Understand this errorAI
+hook.js:608 [Translations] Error: Failed to establish SSE connection
+    at eventSource.onerror (translations.ts:101:25)
+overrideMethod @ hook.js:608Understand this errorAI
+hook.js:608 [VideoCall] Speech error: Error: Failed to establish SSE connection
+    at eventSource.onerror (translations.ts:101:25)
