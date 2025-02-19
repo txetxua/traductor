@@ -4,8 +4,6 @@ export class WebRTCConnection {
   private pc: RTCPeerConnection;
   private stream?: MediaStream;
   private pollingInterval: number | null = null;
-  private retryCount = 0;
-  private maxRetries = 3;
 
   constructor(
     private roomId: string,
@@ -40,7 +38,6 @@ export class WebRTCConnection {
         }
       } catch (error) {
         console.error("[WebRTC] Polling error:", error);
-        this.onError(error as Error);
       }
     }, 1000) as unknown as number;
   }
@@ -64,37 +61,42 @@ export class WebRTCConnection {
       }
     } catch (error) {
       console.error("[WebRTC] Error handling signal:", error);
-      this.handleError(error as Error);
     }
   }
 
   private async handleOffer(offer: RTCSessionDescriptionInit) {
     try {
+      if (this.pc.signalingState !== "stable") {
+        console.log("[WebRTC] Ignoring offer in non-stable state");
+        return;
+      }
+
       await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
       await this.sendSignal({ type: "answer", payload: answer });
     } catch (error) {
       console.error("[WebRTC] Error handling offer:", error);
-      this.handleError(error as Error);
     }
   }
 
   private async handleAnswer(answer: RTCSessionDescriptionInit) {
     try {
-      await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+      if (this.pc.signalingState === "have-local-offer") {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+      }
     } catch (error) {
       console.error("[WebRTC] Error handling answer:", error);
-      this.handleError(error as Error);
     }
   }
 
   private async handleIceCandidate(candidate: RTCIceCandidateInit) {
     try {
-      await this.pc.addIceCandidate(candidate);
+      if (this.pc.remoteDescription) {
+        await this.pc.addIceCandidate(candidate);
+      }
     } catch (error) {
       console.error("[WebRTC] Error adding ICE candidate:", error);
-      // Don't report ICE candidate errors to user
     }
   }
 
@@ -111,7 +113,6 @@ export class WebRTCConnection {
       }
     } catch (error) {
       console.error("[WebRTC] Error sending signal:", error);
-      this.handleError(error as Error);
     }
   }
 
@@ -120,10 +121,7 @@ export class WebRTCConnection {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" }
-      ],
-      iceTransportPolicy: "all",
-      bundlePolicy: "max-bundle",
-      rtcpMuxPolicy: "require",
+      ]
     };
 
     this.pc = new RTCPeerConnection(config);
@@ -133,12 +131,11 @@ export class WebRTCConnection {
         this.sendSignal({
           type: "ice-candidate",
           payload: candidate
-        }).catch(this.handleError.bind(this));
+        }).catch(console.error);
       }
     };
 
     this.pc.ontrack = (event) => {
-      console.log("[WebRTC] Track received:", event.track.kind);
       const [remoteStream] = event.streams;
       if (remoteStream) {
         console.log("[WebRTC] Remote stream received");
@@ -149,52 +146,22 @@ export class WebRTCConnection {
     this.pc.onconnectionstatechange = () => {
       console.log("[WebRTC] Connection state changed to:", this.pc.connectionState);
       this.onConnectionStateChange(this.pc.connectionState);
-
-      if (this.pc.connectionState === "failed" || this.pc.connectionState === "disconnected") {
-        this.handleConnectionFailure();
-      }
     };
 
     this.pc.onnegotiationneeded = async () => {
       try {
-        console.log("[WebRTC] Creating offer");
-        const offer = await this.pc.createOffer();
-        await this.pc.setLocalDescription(offer);
-        await this.sendSignal({
-          type: "offer",
-          payload: offer
-        });
+        if (this.pc.signalingState === "stable") {
+          const offer = await this.pc.createOffer();
+          await this.pc.setLocalDescription(offer);
+          await this.sendSignal({
+            type: "offer",
+            payload: offer
+          });
+        }
       } catch (error) {
         console.error("[WebRTC] Error during negotiation:", error);
-        this.handleError(error as Error);
       }
     };
-  }
-
-  private handleError(error: Error) {
-    console.error("[WebRTC] Error:", error);
-    this.onError(error);
-  }
-
-  private async handleConnectionFailure() {
-    if (this.retryCount < this.maxRetries) {
-      this.retryCount++;
-      console.log(`[WebRTC] Attempting reconnection (${this.retryCount}/${this.maxRetries})`);
-
-      // Close existing connection
-      this.pc.close();
-
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Reinitialize connection
-      this.initializePeerConnection();
-      if (this.stream) {
-        await this.start(this.stream);
-      }
-    } else {
-        this.onError(new Error("Max retries exceeded. WebRTC connection failed."));
-    }
   }
 
   async start(stream: MediaStream) {
@@ -202,20 +169,20 @@ export class WebRTCConnection {
       this.stream = stream;
       this.stream.getTracks().forEach(track => {
         if (this.stream) {
-          console.log("[WebRTC] Adding track:", track.kind);
           this.pc.addTrack(track, this.stream);
         }
       });
     } catch (error) {
       console.error("[WebRTC] Error starting:", error);
-      this.handleError(error as Error);
       throw error;
     }
   }
 
   close() {
     console.log("[WebRTC] Closing connection");
-    this.stream?.getTracks().forEach(track => track.stop());
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+    }
     this.pc.close();
 
     if (this.pollingInterval) {
