@@ -34,15 +34,28 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
         // Set local video
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
+          await localVideoRef.current.play().catch(error => {
+            console.warn("[VideoCall] Local video autoplay failed:", error);
+          });
         }
 
         // Initialize WebRTC
         const webrtc = new WebRTCConnection(
           roomId,
-          (remoteStream) => {
+          async (remoteStream) => {
             console.log("[VideoCall] Received remote stream");
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
+              try {
+                await remoteVideoRef.current.play();
+              } catch (error) {
+                console.warn("[VideoCall] Remote video autoplay failed:", error);
+                toast({
+                  variant: "destructive",
+                  title: "Error de reproducción",
+                  description: "No se pudo reproducir el video remoto automáticamente. Intente hacer clic en la pantalla."
+                });
+              }
             }
           },
           (state) => {
@@ -112,7 +125,8 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          className="absolute inset-0 w-full h-full object-cover bg-black/10"
+          muted={false}
+          className="absolute inset-0 w-full h-full object-cover bg-black"
           aria-label="Video remoto"
         />
 
@@ -124,13 +138,13 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           </div>
         )}
 
-        <div className="absolute top-4 right-4 w-48 aspect-video">
+        <div className="absolute bottom-4 right-4 w-48 aspect-video">
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-cover rounded-lg shadow-lg bg-black/10"
+            className="w-full h-full object-cover rounded-lg shadow-lg bg-black"
             aria-label="Video local"
           />
         </div>
