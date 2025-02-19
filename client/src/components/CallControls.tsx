@@ -63,12 +63,12 @@ export default function CallControls({
   };
 
   return (
-    <div className="h-20 bg-muted border-t flex items-center justify-center gap-4 px-4">
+    <div className="absolute bottom-0 left-0 right-0 h-20 bg-black/40 backdrop-blur-sm flex items-center justify-center gap-4 px-4">
       <Select
         value={language}
         onValueChange={(value) => onLanguageChange(value as Language)}
       >
-        <SelectTrigger className="w-32">
+        <SelectTrigger className="w-32 bg-black/60">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -82,6 +82,7 @@ export default function CallControls({
         size="icon"
         onClick={copyRoomLink}
         title="Copiar enlace de la llamada"
+        className="bg-black/60"
       >
         <Link className="h-4 w-4" />
       </Button>
@@ -91,11 +92,12 @@ export default function CallControls({
         size="icon"
         onClick={onHangup}
         title="Finalizar llamada"
+        className="bg-red-500/80 hover:bg-red-600/80"
       >
         <PhoneOff className="h-4 w-4" />
       </Button>
 
-      <div className={`text-sm font-medium ${getConnectionStatusClass()}`}>
+      <div className={`text-sm font-medium ${getConnectionStatusClass()} text-white/90`}>
         {getConnectionStatusText()}
       </div>
     </div>

@@ -119,14 +119,14 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <div className="flex-1 relative">
+    <div className="h-screen flex flex-col relative bg-background">
+      <div className="absolute inset-0">
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
           muted={false}
-          className="absolute inset-0 w-full h-full object-cover bg-black"
+          className="w-full h-full object-cover bg-black"
           aria-label="Video remoto"
         />
 
@@ -149,7 +149,6 @@ export default function VideoCall({ roomId, language, onLanguageChange }: Props)
           />
         </div>
       </div>
-
       <CallControls
         language={language}
         onLanguageChange={onLanguageChange}
