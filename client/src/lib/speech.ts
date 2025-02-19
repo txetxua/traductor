@@ -10,9 +10,11 @@ export class SpeechHandler {
   private isStarted: boolean = false;
   private restartTimeout?: number;
   private errorCount: number = 0;
-  private readonly MAX_ERRORS = 5; // Increased from 3 to 5
-  private readonly ERROR_RESET_INTERVAL = 30000; // Increased from 10s to 30s
-  private readonly RESTART_DELAY = 2000; // Increased from 1s to 2s
+  private lastRestartTime: number = 0;
+  private readonly MAX_ERRORS = 5;
+  private readonly ERROR_RESET_INTERVAL = 60000; // 1 minute
+  private readonly RESTART_DELAY = 2000;
+  private readonly MIN_RESTART_INTERVAL = 5000; // Minimum time between restarts
 
   constructor(
     private roomId: string,
@@ -34,6 +36,13 @@ export class SpeechHandler {
     try {
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         throw new Error("Speech recognition is not supported in this browser. Try using Chrome.");
+      }
+
+      if (this.recognition) {
+        this.recognition.onend = null;
+        this.recognition.onerror = null;
+        this.recognition.onresult = null;
+        this.recognition.abort();
       }
 
       this.recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
@@ -59,25 +68,26 @@ export class SpeechHandler {
       this.recognition.onstart = () => {
         console.log("[Speech] Recognition started for language:", this.language);
         this.isStarted = true;
+        this.lastRestartTime = Date.now();
       };
 
       this.recognition.onend = () => {
         console.log("[Speech] Recognition ended");
 
-        // Only restart if we're still active and haven't hit error limit
         if (this.isStarted && this.errorCount < this.MAX_ERRORS) {
-          console.log("[Speech] Scheduling restart");
+          const timeSinceLastRestart = Date.now() - this.lastRestartTime;
+          const delayBeforeRestart = Math.max(
+            this.RESTART_DELAY,
+            this.MIN_RESTART_INTERVAL - timeSinceLastRestart
+          );
+
+          console.log("[Speech] Scheduling restart in", delayBeforeRestart, "ms");
           this.restartTimeout = window.setTimeout(() => {
             if (this.isStarted) {
               console.log("[Speech] Restarting recognition");
-              try {
-                this.recognition?.start();
-              } catch (error) {
-                console.error("[Speech] Error restarting recognition:", error);
-                this.handleError(error as Error);
-              }
+              this.restart();
             }
-          }, this.RESTART_DELAY) as unknown as number;
+          }, delayBeforeRestart) as unknown as number;
         } else if (this.errorCount >= this.MAX_ERRORS) {
           console.log("[Speech] Too many errors, stopping recognition");
           this.stop();
@@ -88,15 +98,10 @@ export class SpeechHandler {
       this.recognition.onerror = (event) => {
         console.log("[Speech] Recognition error:", event.error, event.message);
 
-        // Handle no-speech differently - don't count as an error
-        if (event.error === 'no-speech') {
-          console.log("[Speech] No speech detected, continuing...");
-          return;
-        }
-
-        // Ignore aborted errors when stopping intentionally
-        if (event.error === 'aborted' && !this.isStarted) {
-          console.log("[Speech] Recognition aborted intentionally");
+        // Don't count these as errors
+        if (event.error === 'no-speech' || 
+            (event.error === 'aborted' && !this.isStarted)) {
+          console.log("[Speech] Ignoring non-critical error");
           return;
         }
 
@@ -158,6 +163,16 @@ export class SpeechHandler {
     this.errorCount++;
     console.error(`[Speech] Error ${this.errorCount}/${this.MAX_ERRORS}:`, error.message);
     this.onError?.(error);
+  }
+
+  private restart() {
+    try {
+      this.setupRecognition();
+      this.recognition?.start();
+    } catch (error) {
+      console.error("[Speech] Error during restart:", error);
+      this.handleError(error as Error);
+    }
   }
 
   start() {

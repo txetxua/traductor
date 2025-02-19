@@ -5,6 +5,8 @@ export class WebRTCConnection {
   private stream?: MediaStream;
   private pollingInterval: number | null = null;
   private hasSentOffer = false;
+  private pendingIceCandidates: RTCIceCandidate[] = [];
+  private isSettingRemoteDescription = false;
 
   constructor(
     private roomId: string,
@@ -46,14 +48,25 @@ export class WebRTCConnection {
 
   private async handleSignalingMessage(message: SignalingMessage) {
     try {
-      console.log("[WebRTC] Handling signal:", message.type, "Connection state:", this.pc.signalingState);
+      console.log("[WebRTC] Handling signal:", message.type, "Connection state:", this.pc.connectionState, "Signaling state:", this.pc.signalingState);
 
       if (message.type === "offer") {
-        if (this.pc.signalingState !== "stable") {
-          console.log("[WebRTC] Ignoring offer in non-stable state");
-          return;
-        }
+        await this.handleOffer(message);
+      } else if (message.type === "answer") {
+        await this.handleAnswer(message);
+      } else if (message.type === "ice-candidate" && message.payload) {
+        await this.handleIceCandidate(message.payload);
+      }
+    } catch (error) {
+      console.error("[WebRTC] Error handling signal:", error);
+      this.onError(error as Error);
+    }
+  }
 
+  private async handleOffer(message: SignalingMessage) {
+    if (this.pc.signalingState === "stable" || this.pc.signalingState === "have-remote-offer") {
+      this.isSettingRemoteDescription = true;
+      try {
         await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
         console.log("[WebRTC] Remote description (offer) set");
 
@@ -65,31 +78,74 @@ export class WebRTCConnection {
           type: "answer",
           payload: answer
         });
-      } else if (message.type === "answer") {
-        if (!this.hasSentOffer) {
-          console.log("[WebRTC] Ignoring answer - no offer sent");
-          return;
-        }
 
-        if (this.pc.signalingState === "stable") {
-          console.log("[WebRTC] Ignoring answer in stable state");
-          return;
-        }
+        // Process any pending ICE candidates
+        await this.processPendingIceCandidates();
+      } finally {
+        this.isSettingRemoteDescription = false;
+      }
+    } else {
+      console.log("[WebRTC] Ignoring offer in state:", this.pc.signalingState);
+    }
+  }
 
+  private async handleAnswer(message: SignalingMessage) {
+    if (!this.hasSentOffer) {
+      console.log("[WebRTC] Ignoring answer - no offer sent");
+      return;
+    }
+
+    if (this.pc.signalingState === "have-local-offer") {
+      this.isSettingRemoteDescription = true;
+      try {
         await this.pc.setRemoteDescription(new RTCSessionDescription(message.payload));
         console.log("[WebRTC] Remote description (answer) set");
         this.hasSentOffer = false;
-      } else if (message.type === "ice-candidate" && message.payload) {
-        if (this.pc.remoteDescription) {
-          await this.pc.addIceCandidate(message.payload);
-          console.log("[WebRTC] ICE candidate added");
-        } else {
-          console.log("[WebRTC] Ignoring ICE candidate - no remote description");
+
+        // Process any pending ICE candidates
+        await this.processPendingIceCandidates();
+      } finally {
+        this.isSettingRemoteDescription = false;
+      }
+    } else {
+      console.log("[WebRTC] Ignoring answer in state:", this.pc.signalingState);
+    }
+  }
+
+  private async handleIceCandidate(candidate: RTCIceCandidateInit) {
+    if (this.isSettingRemoteDescription) {
+      // Queue the candidate if we're in the middle of setting remote description
+      this.pendingIceCandidates.push(new RTCIceCandidate(candidate));
+      console.log("[WebRTC] ICE candidate queued");
+    } else if (this.pc.remoteDescription) {
+      try {
+        await this.pc.addIceCandidate(candidate);
+        console.log("[WebRTC] ICE candidate added");
+      } catch (error) {
+        console.error("[WebRTC] Error adding ICE candidate:", error);
+        this.onError(error as Error);
+      }
+    } else {
+      this.pendingIceCandidates.push(new RTCIceCandidate(candidate));
+      console.log("[WebRTC] ICE candidate queued (no remote description)");
+    }
+  }
+
+  private async processPendingIceCandidates() {
+    if (this.pendingIceCandidates.length > 0) {
+      console.log("[WebRTC] Processing pending ICE candidates:", this.pendingIceCandidates.length);
+      while (this.pendingIceCandidates.length) {
+        const candidate = this.pendingIceCandidates.shift();
+        if (candidate) {
+          try {
+            await this.pc.addIceCandidate(candidate);
+            console.log("[WebRTC] Pending ICE candidate added");
+          } catch (error) {
+            console.error("[WebRTC] Error adding pending ICE candidate:", error);
+            this.onError(error as Error);
+          }
         }
       }
-    } catch (error) {
-      console.error("[WebRTC] Error handling signal:", error);
-      this.onError(error as Error);
     }
   }
 
@@ -121,7 +177,10 @@ export class WebRTCConnection {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" }
-      ]
+      ],
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     };
 
     this.pc = new RTCPeerConnection(configuration);
@@ -159,18 +218,13 @@ export class WebRTCConnection {
 
     this.pc.onnegotiationneeded = async () => {
       try {
-        if (this.hasSentOffer) {
-          console.log("[WebRTC] Negotiation needed but offer already sent");
+        if (this.hasSentOffer || this.pc.signalingState !== "stable") {
+          console.log("[WebRTC] Negotiation needed but not in stable state or offer already sent");
           return;
         }
 
-        console.log("[WebRTC] Creating offer, signaling state:", this.pc.signalingState);
+        console.log("[WebRTC] Creating offer");
         const offer = await this.pc.createOffer();
-        if (this.pc.signalingState !== "stable") {
-          console.log("[WebRTC] Signaling state is not stable, aborting");
-          return;
-        }
-
         await this.pc.setLocalDescription(offer);
         console.log("[WebRTC] Local description set");
 
