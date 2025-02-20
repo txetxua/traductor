@@ -1,27 +1,15 @@
-import { io, type Socket } from "socket.io-client";
-import { type SignalingMessage } from "@shared/schema";
-
-const API_URL = import.meta.env.VITE_API_URL || "https://tu-backend.railway.app";
-
 export class WebRTCConnection {
   private pc: RTCPeerConnection;
-  private stream?: MediaStream;
   private socket: Socket;
 
-  constructor(
-    private roomId: string,
-    private onRemoteStream: (stream: MediaStream) => void,
-    private onConnectionStateChange: (state: RTCPeerConnectionState) => void,
-    private onError: (error: Error) => void
-  ) {
-    console.log("[WebRTC] Initializing for room:", roomId);
-
-    this.socket = io(API_URL, {
-      path: "/socket.io",
-      reconnection: true,
-      transports: ["websocket"],
-    });
-
-    this.setupPeerConnection();
-    this.setupSocketEvents();
+  constructor() {
+    this.pc = new RTCPeerConnection();
+    this.socket = io("https://mi-backend.railway.app"); // Asegurar que use la URL correcta
   }
+
+  close() {
+    console.log("[WebRTC] Closing connection");
+    this.pc.close();
+    this.socket.disconnect();
+  }
+} // <- Esta llave es importante
