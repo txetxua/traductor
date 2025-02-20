@@ -9,7 +9,11 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"]
+    }
   },
   "include": ["server/**/*", "shared/**/*"]
 }
