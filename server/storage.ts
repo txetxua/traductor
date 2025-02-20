@@ -1,7 +1,7 @@
 import { calls, translations, type Call, type InsertCall, type Translation, type InsertTranslation } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { schema } from "../shared/schema"; // Usa una ruta relativa
+import { calls, translations } from "../shared/schema"; 
 
 
 export interface ICallStorage {

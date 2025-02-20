@@ -5,7 +5,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { registerRoutes } from "./routes";
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 
 // Configuración de CORS para permitir conexiones desde el frontend en Vercel
 app.use(cors({ origin: "*" }));
