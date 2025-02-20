@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": ".",  // 👈 Cambiar "server" por "."
+    "outDir": "dist",  
+    "rootDir": ".",    
     "module": "CommonJS",
     "target": "ES2022",
     "strict": true,
@@ -9,12 +9,8 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@shared/*": ["shared/*"]
-    }
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["server/**/*", "shared/**/*"], // ✅ Mantener shared
+  "include": ["server/**/*", "shared/**/*"],
   "exclude": ["node_modules", "dist"]
 }
