@@ -1,8 +1,7 @@
 import { calls, translations, type Call, type InsertCall, type Translation, type InsertTranslation } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { calls, translations } from "../shared/schema"; 
-
+import { calls, translations } from "../shared/schema";
 
 export interface ICallStorage {
   createCall(call: InsertCall): Promise<Call>;
