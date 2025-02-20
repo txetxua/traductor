@@ -2,7 +2,6 @@ import { Express } from "express";
 import { Server as SocketIOServer } from "socket.io";
 
 var rooms = new Map();
-var translations = new Map();
 var sseClients = new Map();
 
 export function registerRoutes(app: Express, io: SocketIOServer) {
