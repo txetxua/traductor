@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".", 
+    "rootDir": ".",  // 👈 Cambiar "server" por "."
     "module": "CommonJS",
     "target": "ES2022",
     "strict": true,
@@ -15,5 +15,6 @@
       "@shared/*": ["shared/*"]
     }
   },
-  "include": ["server/**/*", "shared/**/*"]
+  "include": ["server/**/*", "shared/**/*"], // ✅ Mantener shared
+  "exclude": ["node_modules", "dist"]
 }
