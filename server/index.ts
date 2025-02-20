@@ -7,7 +7,6 @@ import { registerRoutes } from "./routes";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Configurar CORS para permitir conexiones desde el frontend en Vercel
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -18,6 +17,7 @@ const io = new SocketIOServer(httpServer, {
   path: "/socket.io"
 });
 
+// Registrar rutas
 registerRoutes(app, io);
 
 httpServer.listen(PORT, "0.0.0.0", () => {
