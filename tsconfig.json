@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "server",
+    "rootDir": ".", 
     "module": "CommonJS",
     "target": "ES2022",
     "strict": true,
@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["server/**/*"]
+  "include": ["server/**/*", "shared/**/*"]
 }
