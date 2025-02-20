@@ -35,16 +35,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Translations] Setting up SSE for room ${roomId}, language ${language}`);
 
       // Set SSE headers with correct CORS
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
 
       // Send initial message to confirm connection
-      res.flushHeaders();
-      res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+      res.write(`event: connected\ndata: ${JSON.stringify({ type: "connected" })}\n\n`);
 
       // Store SSE client
       if (!sseClients.has(roomId)) {
@@ -120,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         clients.forEach(client => {
           if (!client.res.writableEnded) {
-            client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+            client.res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
           }
         });
       }
@@ -187,11 +188,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             message: 'Debe unirse a una sala primero'
           });
           return;
-        }
-
-        const room = rooms.get(currentRoom);
-        if (!room) {
-          throw new Error('Room not found');
         }
 
         console.log(`[SocketIO] Broadcasting ${message.type} to room ${currentRoom}`);

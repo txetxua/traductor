@@ -5,7 +5,9 @@ type ErrorCallback = (error: Error) => void;
 
 export class TranslationHandler {
   private eventSource: EventSource | null = null;
-  private pendingTranslations = new Set<string>();
+  private reconnectTimer?: number;
+  private retryCount = 0;
+  private maxRetries = 3;
 
   constructor(
     private roomId: string,
@@ -21,14 +23,18 @@ export class TranslationHandler {
     try {
       this.cleanup();
 
-      // Usar la URL actual para el SSE
       const sseUrl = new URL(`${window.location.origin}/api/translations/stream/${this.roomId}`);
       sseUrl.searchParams.set('language', this.language);
 
       console.log("[Translations] Connecting to:", sseUrl.toString());
       this.eventSource = new EventSource(sseUrl.toString());
 
-      this.eventSource.onmessage = (event) => {
+      this.eventSource.addEventListener('connected', (event) => {
+        console.log("[Translations] SSE Connected:", event.data);
+        this.retryCount = 0;
+      });
+
+      this.eventSource.addEventListener('message', (event) => {
         try {
           console.log("[Translations] Message received:", event.data);
           const message = JSON.parse(event.data);
@@ -51,11 +57,29 @@ export class TranslationHandler {
           console.error("[Translations] Message processing error:", error);
           this.onError?.(error as Error);
         }
-      };
+      });
 
       this.eventSource.onerror = (error) => {
         console.error("[Translations] SSE error:", error);
-        this.onError?.(new Error("Error en la conexión de traducciones"));
+
+        if (this.retryCount < this.maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, this.retryCount), 5000);
+          this.retryCount++;
+
+          console.log(`[Translations] Reconnecting (${this.retryCount}/${this.maxRetries}) in ${delay}ms`);
+
+          if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+          }
+
+          this.reconnectTimer = window.setTimeout(() => {
+            this.connect();
+          }, delay);
+        } else {
+          const error = new Error("No se pudo establecer la conexión para las traducciones");
+          console.error("[Translations] Connection failed:", error);
+          this.onError?.(error);
+        }
       };
 
     } catch (error) {
@@ -99,6 +123,11 @@ export class TranslationHandler {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
+    }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
     }
   }
 
