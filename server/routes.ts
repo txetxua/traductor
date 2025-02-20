@@ -1,8 +1,8 @@
 import { Express } from "express";
 import { Server as SocketIOServer } from "socket.io";
 
-var rooms = new Map();
-var sseClients = new Map();
+const rooms = new Map();
+const sseClients = new Map();
 
 export function registerRoutes(app: Express, io: SocketIOServer) {
   console.log("[SocketIO] Server initialized");
