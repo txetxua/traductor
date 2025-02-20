@@ -1,6 +1,5 @@
 import { Express } from "express";
 import { Server as SocketIOServer } from "socket.io";
-import { createServer } from "http";
 
 var rooms = new Map();
 var translations = new Map();
@@ -62,41 +61,6 @@ export function registerRoutes(app: Express, io: SocketIOServer) {
     } catch (error) {
       console.error("[Translations] Error setting up SSE:", error);
       res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
-
-  app.post("/api/translate", async (req, res) => {
-    try {
-      const { text, from, to, roomId } = req.body;
-      if (!text || !from || !to || !roomId) {
-        res.status(400).json({ error: "Missing required fields" });
-        return;
-      }
-
-      console.log(`[Translations] Translation request:`, { text, from, to, roomId });
-      const translatedText = `[${to.toUpperCase()}] ${text}`;
-
-      if (!translations.has(roomId)) {
-        translations.set(roomId, new Map());
-      }
-      translations.get(roomId)?.set(text, translatedText);
-
-      const clients = sseClients.get(roomId);
-      if (clients) {
-        const message = { type: "translation", text, translated: translatedText, from, to };
-        console.log(`[Translations] Broadcasting to ${clients.size} clients:`, message);
-
-        clients.forEach((client: any) => {
-          if (!client.res.writableEnded) {
-            client.res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
-          }
-        });
-      }
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error("[Translations] Translation error:", error);
-      res.status(500).json({ error: "Translation failed" });
     }
   });
 
