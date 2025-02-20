@@ -1,14 +1,15 @@
 {
-  "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {
-    "outDir": "dist", 
-    "rootDir": "server", 
-    "module": "CommonJS", 
-    "target": "ES6", 
-    "strict": true
+    "outDir": "dist",
+    "rootDir": "server",
+    "module": "CommonJS",
+    "target": "ES2022",
+    "strict": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["server/**/*"]
-    }
-  }
 }
